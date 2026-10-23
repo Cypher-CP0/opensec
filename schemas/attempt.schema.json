@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "AttemptStatus": {
+      "enum": [
+        "running",
+        "succeeded",
+        "retryable_failure",
+        "blocked_environment",
+        "needs_reconciliation",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "Id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lease_generation": {
+      "format": "uint64",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schema_version": {
+      "format": "uint8",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "started_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/AttemptStatus"
+    },
+    "task_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "terminal_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "attempt_id",
+    "task_id",
+    "lease_generation",
+    "status",
+    "started_at"
+  ],
+  "title": "TaskAttempt",
+  "type": "object"
+}

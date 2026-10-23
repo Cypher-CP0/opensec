@@ -1,0 +1,12 @@
+{
+  "example_only": true,
+  "method": "GET",
+  "path": "/exports/export-b",
+  "identity_ref": "tenant-a-reader",
+  "status": 200,
+  "body": {
+    "export_id": "export-b",
+    "tenant_id": "tenant-b",
+    "content": "SYNTHETIC export owned by tenant B"
+  }
+}

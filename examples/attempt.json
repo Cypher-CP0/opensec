@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "attempt_id": "attempt-example",
+  "task_id": "task-lab-web",
+  "lease_generation": 1,
+  "status": "succeeded",
+  "started_at": "2026-10-23T00:00:00Z",
+  "finished_at": "2026-10-23T00:00:05Z",
+  "terminal_reason": "Synthetic contract example; no scheduled task was executed."
+}

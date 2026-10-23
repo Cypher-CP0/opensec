@@ -1,0 +1,247 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_artifact_bytes": {
+          "format": "uint64",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_model_tokens": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_requests": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_wall_seconds": {
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_wall_seconds",
+        "max_model_tokens",
+        "max_requests",
+        "max_artifact_bytes"
+      ],
+      "type": "object"
+    },
+    "Hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "Id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "RetryClass": {
+      "enum": [
+        "read_only",
+        "resettable",
+        "requires_reconciliation"
+      ],
+      "type": "string"
+    },
+    "SourceTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+          "type": "string"
+        },
+        "repository_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "snapshot_sha256": {
+          "$ref": "#/$defs/Hash"
+        }
+      },
+      "required": [
+        "repository_id",
+        "commit",
+        "snapshot_sha256"
+      ],
+      "type": "object"
+    },
+    "Stage": {
+      "enum": [
+        "prepare",
+        "recon",
+        "hunt",
+        "validate"
+      ],
+      "type": "string"
+    },
+    "Target": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "source",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/SourceTarget"
+            }
+          },
+          "required": [
+            "mode",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "web",
+              "type": "string"
+            },
+            "web": {
+              "$ref": "#/$defs/WebTarget"
+            }
+          },
+          "required": [
+            "mode",
+            "web"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mapping_ref": {
+              "$ref": "#/$defs/Id"
+            },
+            "mode": {
+              "const": "hybrid",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/SourceTarget"
+            },
+            "web": {
+              "$ref": "#/$defs/WebTarget"
+            }
+          },
+          "required": [
+            "mode",
+            "source",
+            "web",
+            "mapping_ref"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WebTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "observation_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "seed_urls": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "deployment_id",
+        "observation_id",
+        "origin",
+        "seed_urls"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "deadline": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "dependencies": {
+      "items": {
+        "$ref": "#/$defs/Id"
+      },
+      "type": "array"
+    },
+    "investigation_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "policy_ref": {
+      "$ref": "#/$defs/Id"
+    },
+    "project_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "question": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "retry_class": {
+      "$ref": "#/$defs/RetryClass"
+    },
+    "run_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "schema_version": {
+      "format": "uint8",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "stage": {
+      "$ref": "#/$defs/Stage"
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
+    },
+    "task_id": {
+      "$ref": "#/$defs/Id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "project_id",
+    "run_id",
+    "investigation_id",
+    "stage",
+    "target",
+    "policy_ref",
+    "question",
+    "created_at",
+    "deadline",
+    "retry_class",
+    "budget",
+    "dependencies"
+  ],
+  "title": "TaskSpec",
+  "type": "object"
+}

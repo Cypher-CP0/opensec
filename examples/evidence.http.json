@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "evidence_id": "evidence-example",
+  "candidate_id": "candidate-example",
+  "project_id": "lab-project",
+  "run_id": "run-example",
+  "task_id": "task-lab-web",
+  "task_attempt_id": "attempt-example",
+  "policy_ref": "local-lab-v1",
+  "observed_at": "2026-10-23T00:00:05Z",
+  "expected_property": "An account can read only its tenant's export",
+  "observed_result": "Synthetic example: tenant A retrieved tenant B's export",
+  "redaction_version": "synthetic-no-credentials-v1",
+  "limitations": [
+    "Contract example only; this record is not a live scan finding."
+  ],
+  "artifact": {
+    "sha256": "c602e621bd381d86a6eb7f428b736e3b790c40fa3febcbe2c7018d4fb6bfda8a",
+    "byte_length": 258,
+    "media_type": "application/json"
+  },
+  "payload": {
+    "kind": "http_sequence",
+    "deployment_id": "lab-vulnerable",
+    "observation_id": "observation-example",
+    "identity_refs": [
+      "tenant-a-reader"
+    ]
+  }
+}

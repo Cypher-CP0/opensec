@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_length": {
+          "format": "uint64",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Hash"
+        }
+      },
+      "required": [
+        "sha256",
+        "byte_length",
+        "media_type"
+      ],
+      "type": "object"
+    },
+    "EvidencePayload": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "anchors": {
+              "items": {
+                "$ref": "#/$defs/SourceAnchor"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "source_trace",
+              "type": "string"
+            },
+            "snapshot_sha256": {
+              "$ref": "#/$defs/Hash"
+            }
+          },
+          "required": [
+            "kind",
+            "snapshot_sha256",
+            "anchors"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "environment_sha256": {
+              "$ref": "#/$defs/Hash"
+            },
+            "exit_code": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "kind": {
+              "const": "test_execution",
+              "type": "string"
+            },
+            "snapshot_sha256": {
+              "$ref": "#/$defs/Hash"
+            },
+            "test_name": {
+              "type": "string"
+            },
+            "test_sha256": {
+              "$ref": "#/$defs/Hash"
+            }
+          },
+          "required": [
+            "kind",
+            "snapshot_sha256",
+            "test_name",
+            "test_sha256",
+            "environment_sha256",
+            "exit_code"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "deployment_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "identity_refs": {
+              "items": {
+                "$ref": "#/$defs/Id"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "http_sequence",
+              "type": "string"
+            },
+            "observation_id": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "kind",
+            "deployment_id",
+            "observation_id",
+            "identity_refs"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "browser_version": {
+              "type": "string"
+            },
+            "deployment_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "identity_refs": {
+              "items": {
+                "$ref": "#/$defs/Id"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "browser_observation",
+              "type": "string"
+            },
+            "observation_id": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "kind",
+            "deployment_id",
+            "observation_id",
+            "identity_refs",
+            "browser_version"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "Id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "type": "string"
+    },
+    "SourceAnchor": {
+      "additionalProperties": false,
+      "properties": {
+        "line_end": {
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "line_start": {
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "line_start",
+        "line_end"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/ArtifactRef"
+    },
+    "candidate_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "evidence_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "expected_property": {
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "observed_result": {
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/EvidencePayload"
+    },
+    "policy_ref": {
+      "$ref": "#/$defs/Id"
+    },
+    "project_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "redaction_version": {
+      "$ref": "#/$defs/Id"
+    },
+    "run_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "schema_version": {
+      "format": "uint8",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "task_attempt_id": {
+      "$ref": "#/$defs/Id"
+    },
+    "task_id": {
+      "$ref": "#/$defs/Id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "candidate_id",
+    "project_id",
+    "run_id",
+    "task_id",
+    "task_attempt_id",
+    "policy_ref",
+    "observed_at",
+    "expected_property",
+    "observed_result",
+    "redaction_version",
+    "limitations",
+    "artifact",
+    "payload"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}

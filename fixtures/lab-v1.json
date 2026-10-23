@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "fixture_id": "tenant-export-lab-v1",
+  "identities": [
+    {
+      "identity_id": "tenant-a-reader",
+      "tenant_id": "tenant-a",
+      "role": "reader",
+      "token": "lab-only-token-a"
+    },
+    {
+      "identity_id": "tenant-b-reader",
+      "tenant_id": "tenant-b",
+      "role": "reader",
+      "token": "lab-only-token-b"
+    }
+  ],
+  "exports": [
+    {
+      "export_id": "export-a",
+      "tenant_id": "tenant-a",
+      "content": "SYNTHETIC export owned by tenant A"
+    },
+    {
+      "export_id": "export-b",
+      "tenant_id": "tenant-b",
+      "content": "SYNTHETIC export owned by tenant B"
+    }
+  ]
+}

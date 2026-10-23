@@ -1,0 +1,6 @@
+/target/
+/bin/
+/.cache/
+/work/
+/artifacts/
+*.log

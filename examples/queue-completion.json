@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "reason": "Queue smoke test completed; no security judgment performed.",
+  "usage": {"artifact_bytes": 0, "tokens": 0, "requests": 0, "wall_seconds": 1, "cost_microusd": 0},
+  "result": {"smoke_test": true}
+}

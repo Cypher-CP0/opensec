@@ -1,12 +1,12 @@
-**Unified vulnerability harness — milestone 1**
+**Unified vulnerability harness — milestone 2**
 
-Go hosts the CLI and laboratory. Rust owns versioned task, attempt, and evidence contracts, semantic validation, evidence-to-task binding, and artifact digest verification. The languages communicate through a bounded, versioned JSON subprocess protocol.
+Go hosts the CLI, laboratory, PostgreSQL queue, and worker lifecycle. Rust owns versioned task, attempt, and evidence contracts, semantic validation, evidence-to-task binding, and artifact digest verification. The languages communicate through a bounded, versioned JSON subprocess protocol.
 
-This milestone implements project setup, contracts, and a deterministic laboratory. Scheduling, PostgreSQL persistence, model workers, independent security judgment, browser automation, and execution isolation come next. A schema-valid evidence record is not a confirmed vulnerability.
+This milestone adds PostgreSQL persistence, durable leases, bounded retries, cancellation, and budget accounting to the existing contracts and deterministic lab. Model/scanner handlers, execution isolation, and independent security judgment remain future work. A schema-valid evidence record is not a confirmed vulnerability.
 
 **Build and verify from this directory.**
 
-Prerequisites: Go 1.26 or newer; Rust 1.85 or newer with Cargo, rustfmt, and Clippy; a native linker required by the Rust toolchain. Development here was verified with Go 1.26.0 and Rust 1.98.0 on Windows. Cargo.lock pins Rust dependencies. Go currently uses only the standard library.
+Prerequisites: Go 1.26 or newer; Rust 1.85 or newer with Cargo, rustfmt, and Clippy; a native linker required by the Rust toolchain. Development here was verified with Go 1.26.0 and Rust 1.98.0 on Windows. Cargo.lock pins Rust dependencies. Go uses pgx/v5 for PostgreSQL; go.mod and go.sum pin its dependencies. PostgreSQL 17 is required for queue integration tests.
 
 On PowerShell:
 
@@ -72,6 +72,9 @@ Metadata reports fixture identity and digest. It does not claim the fixture dige
 - examples/: valid contract examples for all three modes and evidence.
 - internal/coreclient/: Go subprocess adapter with timeout and protocol checks.
 - internal/lab/: HTTP service and regression tests.
+- internal/queue/: pgx store, embedded migration, transactional scheduling and accounting.
+- internal/worker/: lease-aware handler execution, heartbeats and recovery polling.
+- compose.yaml: optional local PostgreSQL with persistent storage.
 - fixtures/: embedded, language-independent public dataset.
 - docs/: laboratory expectations, protocol, and language decision.
 
@@ -92,6 +95,8 @@ Rust tests cover all mode examples, invalid versions, unknown fields, malformed 
 
 Go tests cover normal tenant access, cross-tenant access in both variants, authentication, missing objects, concurrent identity isolation, variant metadata, mutation rejection, loopback binding, and CLI errors. Integration tests send real loopback HTTP requests, capture synthetic evidence without authorization headers, and validate/bind/hash-check that evidence through the compiled Rust binary.
 
-This first stage does not enforce DNS/egress policy for arbitrary targets, provide a sandbox, verify persisted lease ownership, or assess exploitability. The CLI's loopback binding limits its own lab server exposure, not future scanner traffic.
+This milestone does not enforce DNS/egress policy for arbitrary targets, provide a sandbox, authenticate remote workers, or assess exploitability. The CLI's loopback binding limits its own lab server exposure, not future scanner traffic.
 
-**Next implementation step:** PostgreSQL task storage and migrations, atomic leases and budget reservations, authenticated worker submission, and runner lifecycle management. Keep those Go components dependent on the existing Rust contracts.
+**PostgreSQL queue:** See [docs/queue.md](docs/queue.md) for setup, CLI examples, retry and cancellation semantics, budget accounting, worker integration, and limitations. Run scripts/check-postgres.ps1 or scripts/check-postgres.sh with HARNESS_TEST_DATABASE_URL set; the ordinary checks do not exercise a database.
+
+**Next implementation step:** authenticated coordinator/worker service boundary and an isolated runner that enforces target policy and resource limits, followed by evidence persistence and validated scanner execution.

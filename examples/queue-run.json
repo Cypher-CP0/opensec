@@ -1,0 +1,12 @@
+{
+  "project_id": "lab-project",
+  "run_id": "queue-demo",
+  "max_tasks": 10,
+  "max_attempts": 30,
+  "limits": {
+    "artifact_bytes": 10485760, "tokens": 10000,
+    "requests": 100,
+    "wall_seconds": 3600,
+    "cost_microusd": 1000000
+  }
+}

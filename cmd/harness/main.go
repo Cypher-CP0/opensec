@@ -28,9 +28,11 @@ func main() {
 }
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: harness <schema|validate|lab> [options]")
+		return errors.New("usage: harness <schema|validate|lab|queue> [options]")
 	}
 	switch args[0] {
+	case "queue":
+		return queueCommand(ctx, args[1:], out)
 	case "schema":
 		flags := flag.NewFlagSet("schema", flag.ContinueOnError)
 		dir := flags.String("out", "schemas", "output directory")

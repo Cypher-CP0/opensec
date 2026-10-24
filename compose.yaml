@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: harness
+      POSTGRES_USER: harness
+      POSTGRES_PASSWORD: ${HARNESS_POSTGRES_PASSWORD:?Set HARNESS_POSTGRES_PASSWORD}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes:
+      - harness-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harness -d harness"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  harness-postgres:

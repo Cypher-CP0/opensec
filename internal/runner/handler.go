@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/configfile"
 	"example.com/unified-harness/internal/policy"
 	"example.com/unified-harness/internal/queue"
@@ -70,6 +71,13 @@ func (h Handler) Run(ctx context.Context, l queue.Lease) queue.Completion {
 	p, err := h.Policies.AuthorizeTask(ctx, l.Spec)
 	if err != nil {
 		return finish("failed", "target policy denied task", nil)
+	}
+	check, parseErr := checks.Parse(l.Spec)
+	if parseErr != nil {
+		return finish("failed", "invalid check specification", nil)
+	}
+	if check.Check != nil {
+		return h.runCheck(ctx, l, p, check)
 	}
 	var spec targetSpec
 	if err = json.Unmarshal(l.Spec, &spec); err != nil {

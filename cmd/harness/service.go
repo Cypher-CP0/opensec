@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"example.com/unified-harness/internal/artifact"
 	"example.com/unified-harness/internal/coordinator"
 	"example.com/unified-harness/internal/coreclient"
 	"example.com/unified-harness/internal/policy"
@@ -28,6 +29,7 @@ func serveCommand(ctx context.Context, args []string, out io.Writer) error {
 	f := flag.NewFlagSet("serve", flag.ContinueOnError)
 	listen := f.String("listen", "127.0.0.1:8090", "literal listen address")
 	authFile := f.String("auth", "", "hashed credential configuration")
+	artifacts := f.String("artifacts", "work/artifacts", "private evidence artifact directory")
 	policies := f.String("policies", "", "target policy JSON")
 	cert := f.String("tls-cert", "", "TLS certificate")
 	key := f.String("tls-key", "", "TLS key")
@@ -65,6 +67,14 @@ func serveCommand(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer store.Close()
+	blobs, err := artifact.OpenLocal(*artifacts)
+	if err != nil {
+		return err
+	}
+	defer blobs.Close()
+	if err = store.ConfigureEvidence(*core, blobs); err != nil {
+		return err
+	}
 	handler, err := coordinator.New(store, auth, registry)
 	if err != nil {
 		return err
@@ -202,6 +212,7 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	runID := f.String("run", "", "run ID")
 	policies := f.String("policies", "", "worker target policies")
 	snapshots := f.String("snapshots", "", "registered source archive manifest")
+	credentials := f.String("probe-credentials", "", "operator-configured scoped target credential references")
 	image := f.String("image", "", "local sha256 Docker image ID")
 	core := f.String("core", coreclient.DefaultBinary(), "Rust validator")
 	once := f.Bool("once", false, "process at most one task")
@@ -239,7 +250,11 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	handler := runner.Handler{Policies: registry, Broker: policy.Broker{Policies: registry}, Executor: engine, Snapshots: registered}
+	probeCredentials, err := policy.LoadCredentials(*credentials)
+	if err != nil {
+		return err
+	}
+	handler := runner.Handler{Policies: registry, Broker: policy.Broker{Policies: registry, Credentials: probeCredentials}, Executor: engine, Snapshots: registered}
 	w := worker.Worker{Store: client, ProjectID: *project, RunID: *runID, WorkerID: info.Subject, HeartbeatEvery: client.LeaseDuration() / 3}
 	if *once {
 		if _, err = client.Reap(ctx, *project, *runID); err != nil {

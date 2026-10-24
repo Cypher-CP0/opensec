@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"time"
 
+	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/coreclient"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +34,7 @@ type Store struct {
 	pool      *pgxpool.Pool
 	validator Validator
 	settings  Settings
+	evidence  *evidenceConfig
 }
 
 func Open(ctx context.Context, dsn string, validator Validator, settings Settings) (*Store, error) {
@@ -55,7 +57,7 @@ func Open(ctx context.Context, dsn string, validator Validator, settings Setting
 		pool.Close()
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
-	return &Store{pool, validator, settings}, nil
+	return &Store{pool: pool, validator: validator, settings: settings}, nil
 }
 func (s *Store) Close() { s.pool.Close() }
 func (s *Store) Migrate(ctx context.Context) error {
@@ -70,27 +72,29 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS harness_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
 		return err
 	}
-	raw, err := migrations.ReadFile("migrations/001_queue.sql")
-	if err != nil {
-		return err
-	}
-	checksum := hash(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")))
-	var existing string
-	err = tx.QueryRow(ctx, "SELECT checksum FROM harness_migrations WHERE version=1").Scan(&existing)
-	if err == nil {
-		if existing != checksum {
-			return errors.New("migration checksum mismatch")
+	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql"} {
+		raw, err := migrations.ReadFile(name)
+		if err != nil {
+			return err
 		}
-		return tx.Commit(ctx)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	if _, err = tx.Exec(ctx, string(raw)); err != nil {
-		return err
-	}
-	if _, err = tx.Exec(ctx, "INSERT INTO harness_migrations(version,checksum) VALUES(1,$1)", checksum); err != nil {
-		return err
+		checksum := hash(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")))
+		var existing string
+		err = tx.QueryRow(ctx, "SELECT checksum FROM harness_migrations WHERE version=$1", version+1).Scan(&existing)
+		if err == nil {
+			if existing != checksum {
+				return errors.New("migration checksum mismatch")
+			}
+			continue
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if _, err = tx.Exec(ctx, string(raw)); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, "INSERT INTO harness_migrations(version,checksum) VALUES($1,$2)", version+1, checksum); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -193,6 +197,13 @@ func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options Enqueu
 	}
 	if err := s.validator.ValidateTask(ctx, raw); err != nil {
 		return err
+	}
+	check, checkErr := checks.Parse(raw)
+	if checkErr != nil {
+		return fmt.Errorf("%w: invalid check", ErrInvalid)
+	}
+	if check.Check != nil && check.Stage == "validate" {
+		return fmt.Errorf("%w: validation tasks are coordinator-generated", ErrInvalid)
 	}
 	normalized, err := canonical(raw)
 	if err != nil {

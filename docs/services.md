@@ -1,5 +1,7 @@
 # Authenticated services and isolated runner — milestone 3
 
+For authenticated tenant checks, stored evidence and confirmed findings, use the [milestone 4 walkthrough](findings.md). This page describes the basic inspection workflow.
+
 Go exposes the queue through a scoped authenticated API and runs remote workers. Rust authorizes task targets and resolved network destinations. The first runner inventories source archives and bounded HTTP responses. It reports "security_judgment": "not_performed": task success means inspection completed, not that a vulnerability was found.
 
 ## Run and test in WSL

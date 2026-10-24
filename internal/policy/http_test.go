@@ -78,7 +78,7 @@ func TestBrokerRejectsMixedDNSBeforeConnection(t *testing.T) {
 	resolver := resolverFunc(func(context.Context, string, string) ([]netip.Addr, error) {
 		return []netip.Addr{netip.MustParseAddr("127.0.0.1"), netip.MustParseAddr("169.254.169.254")}, nil
 	})
-	_, n, _, err := (Broker{policies, resolver}).Fetch(t.Context(), p, []string{origin}, 1, 100)
+	_, n, _, err := (Broker{Policies: policies, Resolver: resolver}).Fetch(t.Context(), p, []string{origin}, 1, 100)
 	if err == nil || n != 0 || requests.Load() != 0 {
 		t.Fatal("mixed DNS answers bypassed policy")
 	}

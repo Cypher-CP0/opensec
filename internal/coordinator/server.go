@@ -34,6 +34,9 @@ type Scope struct {
 	TaskID          string `json:"task_id,omitempty"`
 	Reason          string `json:"reason,omitempty"`
 	StateReconciled bool   `json:"state_reconciled,omitempty"`
+	EvidenceID      string `json:"evidence_id,omitempty"`
+	FindingID       string `json:"finding_id,omitempty"`
+	After           string `json:"after,omitempty"`
 }
 type EnqueueRequest struct {
 	Task    json.RawMessage      `json:"task"`
@@ -206,7 +209,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status, err = s.store.Finish(ctx, l, *input.Completion)
 			value = map[string]string{"task_status": status}
 		}
-	case "run", "task", "claim", "cancel", "reap", "resume", "close":
+	case "run", "task", "claim", "cancel", "reap", "resume", "close", "evidence", "finding", "findings":
 		var scope Scope
 		if !decode(w, r, &scope) || !scopeOK(scope.ProjectID, scope.RunID) {
 			return
@@ -216,6 +219,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch operation {
+		case "evidence":
+			if scope.EvidenceID == "" {
+				fail(w, 400, "evidence_required")
+				return
+			}
+			value, err = s.store.GetEvidence(ctx, scope.ProjectID, scope.RunID, scope.EvidenceID)
+		case "finding", "findings":
+			if operation == "finding" && scope.FindingID == "" {
+				fail(w, 400, "finding_required")
+				return
+			}
+			if (operation == "finding" && scope.After != "") || (operation == "findings" && scope.FindingID != "") {
+				fail(w, 400, "invalid_cursor")
+				return
+			}
+			value, err = s.store.Findings(ctx, scope.ProjectID, scope.RunID, scope.FindingID, scope.After)
 		case "run":
 			value, err = s.store.GetRun(ctx, scope.ProjectID, scope.RunID)
 		case "task":

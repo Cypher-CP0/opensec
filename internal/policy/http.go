@@ -23,24 +23,40 @@ type Resolver interface {
 	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
 }
 type Broker struct {
-	Policies *Registry
-	Resolver Resolver
+	Policies    *Registry
+	Resolver    Resolver
+	Credentials *Credentials
 }
 
 // Fetch permits GET only. It never follows redirects, uses environment proxies,
 // forwards credentials, or lets the transport resolve a hostname a second time.
-func (b Broker) Fetch(ctx context.Context, p Policy, urls []string, requestLimit, byteLimit int64) (observations []Observation, requests, bytes int64, err error) {
+func (b Broker) Fetch(ctx context.Context, p Policy, urls []string, requestLimit, byteLimit int64) ([]Observation, int64, int64, error) {
+	probes := make([]Probe, len(urls))
+	for i, u := range urls {
+		probes[i] = Probe{URL: u}
+	}
+	return b.FetchProbes(ctx, p, probes, requestLimit, byteLimit)
+}
+func (b Broker) FetchProbes(ctx context.Context, p Policy, probes []Probe, requestLimit, byteLimit int64) (observations []Observation, requests, bytes int64, err error) {
 	if b.Policies == nil {
 		return nil, 0, 0, errors.New("policy registry is required")
 	}
-	if int64(len(urls)) > requestLimit || byteLimit < 0 {
+	if int64(len(probes)) > requestLimit || byteLimit < 0 {
 		return nil, 0, 0, ErrLimit
 	}
 	resolver := b.Resolver
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	for _, raw := range urls {
+	tokens := make([]string, len(probes))
+	for i, probe := range probes {
+		tokens[i], err = b.Credentials.token(p, probe.URL, probe.IdentityRef)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+	}
+	for i, probe := range probes {
+		raw := probe.URL
 		u, e := url.Parse(raw)
 		if e != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" || strings.Contains(u.Host, "%") {
 			return observations, requests, bytes, errors.New("invalid target URL")
@@ -86,6 +102,9 @@ func (b Broker) Fetch(ctx context.Context, p Policy, urls []string, requestLimit
 		request, e := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 		if e != nil {
 			return observations, requests, bytes, e
+		}
+		if tokens[i] != "" {
+			request.Header.Set("Authorization", "Bearer "+tokens[i])
 		}
 		request.Header.Set("User-Agent", "opensec-mvp/1")
 		request.Header.Set("Accept-Encoding", "identity")

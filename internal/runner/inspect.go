@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/policy"
 	"io"
 	"io/fs"
@@ -18,6 +19,7 @@ const MaxInput = 32 << 20
 const MaxOutput = 1 << 20
 
 type Input struct {
+	Check        *checks.Plan         `json:"check,omitempty"`
 	Observations []policy.Observation `json:"observations"`
 	SourceTar    []byte               `json:"source_tar,omitempty"`
 }
@@ -33,10 +35,11 @@ type Response struct {
 	SHA256 string `json:"sha256"`
 }
 type Report struct {
-	Kind             string     `json:"kind"`
-	Files            []File     `json:"files"`
-	Responses        []Response `json:"responses"`
-	SecurityJudgment string     `json:"security_judgment"`
+	Check            *checks.Result `json:"check,omitempty"`
+	Kind             string         `json:"kind"`
+	Files            []File         `json:"files"`
+	Responses        []Response     `json:"responses"`
+	SecurityJudgment string         `json:"security_judgment"`
 }
 
 func digest(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
@@ -92,6 +95,23 @@ func Inspect(input Input) (Report, error) {
 			return report, errors.New("observation input too large")
 		}
 		report.Responses = append(report.Responses, Response{o.URL, o.Status, len(o.Body), digest(o.Body)})
+	}
+	if input.Check != nil {
+		if err := input.Check.Validate(); err != nil {
+			return report, err
+		}
+		t := checks.Transcript{Version: checks.Version, Observations: []checks.Observation{}}
+		if len(input.Observations) > 3 {
+			return report, errors.New("too many check responses")
+		}
+		exports := []string{input.Check.ExportA, input.Check.ExportB, input.Check.ExportB}
+		tenants := []string{input.Check.TenantA, input.Check.TenantB, input.Check.TenantB}
+		for i, o := range input.Observations {
+			t.Observations = append(t.Observations, checks.Summarize(o.Status, o.Body, exports[i], tenants[i]))
+		}
+		result := checks.Evaluate(t)
+		report.Check = &result
+		report.SecurityJudgment = "deterministic_check"
 	}
 	return report, nil
 }

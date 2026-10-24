@@ -147,6 +147,8 @@ pub struct Budget {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TaskSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<TenantIsolationCheck>,
     #[schemars(range(min = 1, max = 1))]
     pub schema_version: u8,
     pub task_id: Id,
@@ -177,6 +179,17 @@ impl TaskSpec {
             id.validate()?;
         }
         text(&self.question, 4096)?;
+        if let Some(check) = &self.check {
+            check.validate()?;
+            if matches!(self.target, Target::Source { .. })
+                || !matches!(self.stage, Stage::Hunt | Stage::Validate)
+                || !matches!(self.retry_class, RetryClass::ReadOnly)
+                || self.budget.max_requests < 3
+                || self.budget.max_artifact_bytes < 8192
+            {
+                return Err("tenant check requires web input, hunt/validate, read_only and sufficient probe budgets".into());
+            }
+        }
         if self.deadline <= self.created_at {
             return Err("deadline must follow creation".into());
         }
@@ -513,3 +526,41 @@ pub fn validate_document(kind: &str, document: Value) -> Result<(), String> {
 }
 
 pub mod policy;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TenantIsolationCheck {
+    pub kind: TenantCheckKind,
+    pub identity_a_ref: Id,
+    pub identity_b_ref: Id,
+    pub tenant_a: Id,
+    pub tenant_b: Id,
+    pub export_a: Id,
+    pub export_b: Id,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TenantCheckKind {
+    TenantIsolation,
+}
+impl TenantIsolationCheck {
+    fn validate(&self) -> Result<(), String> {
+        for id in [
+            &self.identity_a_ref,
+            &self.identity_b_ref,
+            &self.tenant_a,
+            &self.tenant_b,
+            &self.export_a,
+            &self.export_b,
+        ] {
+            id.validate()?;
+        }
+        if self.identity_a_ref.0 == self.identity_b_ref.0
+            || self.tenant_a.0 == self.tenant_b.0
+            || self.export_a.0 == self.export_b.0
+        {
+            return Err("tenant check needs distinct identities, tenants and exports".into());
+        }
+        Ok(())
+    }
+}

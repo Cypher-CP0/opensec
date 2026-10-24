@@ -118,7 +118,7 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 }
 func (c *Client) Call(ctx context.Context, operation string, input json.RawMessage) (json.RawMessage, error) {
 	switch operation {
-	case "create-run", "enqueue", "run", "task", "claim", "heartbeat", "finish", "cancel", "reap", "resume", "close":
+	case "create-run", "enqueue", "run", "task", "claim", "heartbeat", "finish", "cancel", "reap", "resume", "close", "evidence", "finding", "findings":
 	default:
 		return nil, errors.New("unknown API operation")
 	}

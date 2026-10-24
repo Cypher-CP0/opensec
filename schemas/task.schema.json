@@ -141,6 +141,48 @@
         }
       ]
     },
+    "TenantCheckKind": {
+      "enum": [
+        "tenant_isolation"
+      ],
+      "type": "string"
+    },
+    "TenantIsolationCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "export_a": {
+          "$ref": "#/$defs/Id"
+        },
+        "export_b": {
+          "$ref": "#/$defs/Id"
+        },
+        "identity_a_ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "identity_b_ref": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "$ref": "#/$defs/TenantCheckKind"
+        },
+        "tenant_a": {
+          "$ref": "#/$defs/Id"
+        },
+        "tenant_b": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "kind",
+        "identity_a_ref",
+        "identity_b_ref",
+        "tenant_a",
+        "tenant_b",
+        "export_a",
+        "export_b"
+      ],
+      "type": "object"
+    },
     "WebTarget": {
       "additionalProperties": false,
       "properties": {
@@ -175,6 +217,16 @@
   "properties": {
     "budget": {
       "$ref": "#/$defs/Budget"
+    },
+    "check": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TenantIsolationCheck"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "created_at": {
       "format": "date-time",

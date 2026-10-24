@@ -181,7 +181,7 @@ func (d *Docker) Execute(ctx context.Context, deadline time.Time, input Input, m
 	var report Report
 	decoder := json.NewDecoder(bytes.NewReader(result))
 	decoder.DisallowUnknownFields()
-	if !json.Valid(result) || decoder.Decode(&report) != nil || report.Kind != "inspection" || report.SecurityJudgment != "not_performed" {
+	if !json.Valid(result) || decoder.Decode(&report) != nil || report.Kind != "inspection" || ((input.Check == nil && (report.SecurityJudgment != "not_performed" || report.Check != nil)) || (input.Check != nil && (report.SecurityJudgment != "deterministic_check" || report.Check == nil))) {
 		return nil, errors.New("invalid inspector result")
 	}
 	return result, nil

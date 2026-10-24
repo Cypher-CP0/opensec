@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"example.com/unified-harness/internal/checks"
 	"time"
 )
 
@@ -66,10 +67,11 @@ type Lease struct {
 	Spec         json.RawMessage `json:"spec"`
 }
 type Completion struct {
-	Outcome string          `json:"outcome"`
-	Reason  string          `json:"reason"`
-	Usage   *Units          `json:"usage"`
-	Result  json.RawMessage `json:"result"`
+	Evidence *checks.Submission `json:"evidence,omitempty"`
+	Outcome  string             `json:"outcome"`
+	Reason   string             `json:"reason"`
+	Usage    *Units             `json:"usage"`
+	Result   json.RawMessage    `json:"result"`
 }
 type Task struct {
 	Result      json.RawMessage `json:"result,omitempty"`

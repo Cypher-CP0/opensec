@@ -209,6 +209,18 @@ func (s *Store) Finish(ctx context.Context, l Lease, c Completion) (string, erro
 	if r.Status != "active" || !a.live(now) {
 		return "", ErrLease
 	}
+	if err = s.evidenceTx(ctx, tx, l, a, c, now, r); err != nil {
+		return "", err
+	}
+	// Artifact writes/validation may take time. Recheck the authoritative lease
+	// immediately before committing any evidence or queue state.
+	now, err = dbNow(ctx, tx)
+	if err != nil {
+		return "", err
+	}
+	if !a.live(now) {
+		return "", ErrLease
+	}
 	status, err := s.finishTx(ctx, tx, l.ProjectID, l.RunID, a, c, fingerprint, now, false)
 	if err != nil {
 		return "", err
@@ -448,8 +460,12 @@ func (s *Store) CloseRun(ctx context.Context, project, run string) error {
 	if pending > 0 {
 		return fmt.Errorf("%w: %d tasks are still pending", ErrInvalid, pending)
 	}
+	var unresolved int
+	if err = tx.QueryRow(ctx, "SELECT count(*) FROM findings WHERE project_id=$1 AND run_id=$2 AND status IN ('unvalidated','inconclusive')", project, run).Scan(&unresolved); err != nil {
+		return err
+	}
 	status := "completed"
-	if bad > 0 {
+	if bad > 0 || unresolved > 0 {
 		status = "partial"
 	}
 	if _, err = tx.Exec(ctx, "UPDATE queue_runs SET status=$3 WHERE project_id=$1 AND run_id=$2", project, run, status); err != nil {

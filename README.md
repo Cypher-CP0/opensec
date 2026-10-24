@@ -1,8 +1,8 @@
-**Unified vulnerability harness — milestone 3**
+**OpenSec vulnerability harness — milestone 4**
 
 Go hosts the CLI, laboratory, PostgreSQL queue, and worker lifecycle. Rust owns versioned task, attempt, and evidence contracts, semantic validation, evidence-to-task binding, and artifact digest verification. The languages communicate through a bounded, versioned JSON subprocess protocol.
 
-This milestone adds an authenticated coordinator/worker API, Rust target policy, a bounded HTTP broker and an isolated Docker inspector to the durable queue. The inspector inventories inputs; vulnerability analysis, evidence ingestion and independent security judgment remain future work. A schema-valid evidence record is not a confirmed vulnerability.
+This milestone adds scoped evidence storage, authenticated probes, a deterministic tenant-isolation check, independently scheduled validation, and finding retrieval. A confirmed finding requires a positive discovery and fresh successful replay. Tasks without an explicit check still inventory inputs; general vulnerability discovery and model integration remain future work. See the [findings walkthrough](docs/findings.md) for setup, tests and a complete lab demonstration.
 
 **Build and verify from this directory.**
 
@@ -75,7 +75,9 @@ Metadata reports fixture identity and digest. It does not claim the fixture dige
 - internal/queue/: pgx store, embedded migration, transactional scheduling and accounting.
 - internal/worker/: lease-aware handler execution over PostgreSQL or the API.
 - internal/coordinator/: scoped bearer authentication and remote queue client/server.
-- internal/policy/: Rust policy adapter and bounded HTTP broker.
+- internal/policy/: Rust policy adapter, scoped target credentials and bounded HTTP broker.
+- internal/artifact/: scoped local content-addressed evidence storage.
+- internal/checks/: deterministic tenant check and redacted transcript format.
 - internal/runner/ and cmd/inspector/: constrained Docker lifecycle and offline inspector.
 - compose.yaml: optional local PostgreSQL with persistent storage.
 - fixtures/: embedded, language-independent public dataset.
@@ -98,10 +100,12 @@ Rust tests cover all mode examples, invalid versions, unknown fields, malformed 
 
 Go tests cover normal tenant access, cross-tenant access in both variants, authentication, missing objects, concurrent identity isolation, variant metadata, mutation rejection, loopback binding, and CLI errors. Integration tests send real loopback HTTP requests, capture synthetic evidence without authorization headers, and validate/bind/hash-check that evidence through the compiled Rust binary.
 
-The API authenticates scoped workers, and the first inspector uses a constrained container with mediated HTTP access. It does not assess exploitability or execute arbitrary target programs. The CLI's loopback binding limits its own lab server exposure, not future scanner traffic.
+The API authenticates scoped workers, and the runner uses a constrained container with mediated HTTP access. The explicit tenant check can reproduce one export authorization failure; it does not execute arbitrary target programs or discover general vulnerability classes. The CLI's loopback binding limits its own lab server exposure, not scanner traffic.
 
 **PostgreSQL queue:** See [docs/queue.md](docs/queue.md) for setup, CLI examples, retry and cancellation semantics, budget accounting, worker integration, and limitations. Run scripts/check-postgres.ps1 or scripts/check-postgres.sh with HARNESS_TEST_DATABASE_URL set; the ordinary checks do not exercise a database.
 
 **Services and isolated runner:** See [docs/services.md](docs/services.md) for a complete WSL walkthrough, API roles, policy rules, source snapshots, container limits and real Docker tests.
 
-**Next implementation step:** evidence persistence and independently validated scanner execution behind the established policy and isolation boundaries.
+**Evidence and findings:** See [docs/findings.md](docs/findings.md) for the authenticated tenant check, evidence storage, independent replay, findings API and WSL demo. Run scripts/check-findings.sh for the full API/PostgreSQL/Docker integration suite.
+
+**Next implementation step:** add a source-code analyzer using the same task/evidence boundaries, then hybrid correlation and model-driven hypothesis generation.

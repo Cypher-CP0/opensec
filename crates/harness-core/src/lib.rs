@@ -511,3 +511,5 @@ pub fn validate_document(kind: &str, document: Value) -> Result<(), String> {
         _ => Err("unknown contract kind".into()),
     }
 }
+
+pub mod policy;

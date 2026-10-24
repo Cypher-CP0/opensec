@@ -32,3 +32,5 @@ The digest operation compares SHA-256 of the UTF-8 content and returns its byte 
 TaskSpec is immutable requested work. TaskAttempt describes execution state separately. Evidence has no confirmed/status field. A future coordinator must verify that the referenced attempt belongs to the task and holds the current lease before accepting its evidence.
 
 Unknown fields and unsupported protocol/schema versions are rejected. Generated JSON Schemas are structural contracts; cross-field semantic checks remain in Rust.
+
+Milestone 3 adds three operations to protocol version 1: validate_policy accepts policy; authorize_task accepts policy and task; authorize_network accepts policy, url and addresses. Policies are strict JSON objects with policy_ref, project_id, allowed_origins, allowed_cidrs, allow_private, repository_ids and max_input_bytes. Rust performs the semantic decisions; Go resolves DNS, pins approved addresses and enforces runtime resource limits. Existing task/attempt/evidence schemas are unchanged.

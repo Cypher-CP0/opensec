@@ -1,0 +1,10 @@
+**
+!go.mod
+!go.sum
+!Dockerfile.runner
+!.dockerignore
+!internal/
+!internal/**
+!cmd/
+!cmd/inspector/
+!cmd/inspector/**

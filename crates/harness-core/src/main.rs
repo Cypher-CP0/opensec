@@ -8,6 +8,21 @@ const MAX_INPUT: u64 = 4 * 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
+    ValidatePolicy {
+        protocol_version: u8,
+        policy: harness_core::policy::Policy,
+    },
+    AuthorizeTask {
+        protocol_version: u8,
+        policy: harness_core::policy::Policy,
+        task: Box<TaskSpec>,
+    },
+    AuthorizeNetwork {
+        protocol_version: u8,
+        policy: harness_core::policy::Policy,
+        url: String,
+        addresses: Vec<String>,
+    },
     Schemas {
         protocol_version: u8,
     },
@@ -29,7 +44,16 @@ enum Request {
 }
 fn execute(request: Request) -> Result<Value, String> {
     let version = match &request {
-        Request::Schemas { protocol_version }
+        Request::ValidatePolicy {
+            protocol_version, ..
+        }
+        | Request::AuthorizeTask {
+            protocol_version, ..
+        }
+        | Request::AuthorizeNetwork {
+            protocol_version, ..
+        }
+        | Request::Schemas { protocol_version }
         | Request::Validate {
             protocol_version, ..
         }
@@ -44,6 +68,23 @@ fn execute(request: Request) -> Result<Value, String> {
         return Err("unsupported protocol version".into());
     }
     match request {
+        Request::ValidatePolicy { policy, .. } => {
+            policy.validate()?;
+            Ok(json!({"valid":true}))
+        }
+        Request::AuthorizeTask { policy, task, .. } => {
+            policy.authorize_task(&task)?;
+            Ok(json!({"allowed":true}))
+        }
+        Request::AuthorizeNetwork {
+            policy,
+            url,
+            addresses,
+            ..
+        } => {
+            policy.authorize_network(&url, &addresses)?;
+            Ok(json!({"allowed":true}))
+        }
         Request::Schemas { .. } => Ok(harness_core::schemas()),
         Request::Validate { kind, document, .. } => {
             harness_core::validate_document(&kind, document)?;

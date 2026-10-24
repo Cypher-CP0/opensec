@@ -4,3 +4,6 @@
 /work/
 /artifacts/
 *.log
+
+*.token
+.env

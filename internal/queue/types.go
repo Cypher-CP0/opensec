@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	ErrInvalid   = errors.New("invalid queue request")
 	ErrConflict  = errors.New("idempotency conflict")
 	ErrBudget    = errors.New("run budget exhausted or insufficient")
 	ErrNoWork    = errors.New("no eligible task")
@@ -71,11 +72,12 @@ type Completion struct {
 	Result  json.RawMessage `json:"result"`
 }
 type Task struct {
-	TaskID      string    `json:"task_id"`
-	Status      string    `json:"status"`
-	Generation  int64     `json:"generation"`
-	AvailableAt time.Time `json:"available_at"`
-	LastReason  string    `json:"last_reason"`
+	Result      json.RawMessage `json:"result,omitempty"`
+	TaskID      string          `json:"task_id"`
+	Status      string          `json:"status"`
+	Generation  int64           `json:"generation"`
+	AvailableAt time.Time       `json:"available_at"`
+	LastReason  string          `json:"last_reason"`
 }
 type Validator interface {
 	ValidateTask(context.Context, json.RawMessage) error

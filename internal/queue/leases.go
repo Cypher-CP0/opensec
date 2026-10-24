@@ -16,7 +16,7 @@ const readyWhere = `t.project_id=$1 AND t.run_id=$2 AND t.status='queued' AND t.
 
 func (s *Store) Claim(ctx context.Context, project, run, worker string) (Lease, error) {
 	if !identifier.MatchString(worker) {
-		return Lease{}, errors.New("invalid worker identity")
+		return Lease{}, fmt.Errorf("%w: invalid worker identity", ErrInvalid)
 	}
 	tx, r, err := s.locked(ctx, project, run)
 	if err != nil {
@@ -154,16 +154,16 @@ func validateCompletion(c Completion) error {
 	switch c.Outcome {
 	case "succeeded", "failed", "retryable_failure", "blocked_environment", "needs_reconciliation":
 	default:
-		return errors.New("invalid completion outcome")
+		return fmt.Errorf("%w: invalid completion outcome", ErrInvalid)
 	}
 	if len(c.Reason) == 0 || len(c.Reason) > 4096 {
-		return errors.New("completion needs a bounded reason")
+		return fmt.Errorf("%w: completion needs a bounded reason", ErrInvalid)
 	}
 	if c.Usage != nil && !c.Usage.valid() {
-		return errors.New("invalid usage")
+		return fmt.Errorf("%w: invalid usage", ErrInvalid)
 	}
 	if len(c.Result) > 1024*1024 || !json.Valid(c.Result) {
-		return errors.New("result must be JSON of at most 1 MiB")
+		return fmt.Errorf("%w: result must be JSON of at most 1 MiB", ErrInvalid)
 	}
 	return nil
 }
@@ -224,7 +224,7 @@ func (s *Store) finishTx(ctx context.Context, tx pgx.Tx, project, run string, a 
 	if !uncertain {
 		used = *c.Usage
 		if !used.within(a.Reserved) {
-			return "", errors.New("reported usage exceeds reservation")
+			return "", fmt.Errorf("%w: reported usage exceeds reservation", ErrInvalid)
 		}
 	}
 	next := c.Outcome
@@ -332,7 +332,7 @@ func (s *Store) Reap(ctx context.Context, project, run string) (int, error) {
 }
 func (s *Store) Cancel(ctx context.Context, project, run, task, reason string) error {
 	if reason == "" || len(reason) > 4096 {
-		return errors.New("cancellation needs a bounded reason")
+		return fmt.Errorf("%w: cancellation needs a bounded reason", ErrInvalid)
 	}
 	tx, r, err := s.locked(ctx, project, run)
 	if err != nil {
@@ -386,7 +386,7 @@ func (s *Store) Cancel(ctx context.Context, project, run, task, reason string) e
 }
 func (s *Store) Resume(ctx context.Context, project, run, task, reason string, stateReconciled bool) error {
 	if reason == "" || len(reason) > 4096 {
-		return errors.New("resume needs a bounded reason")
+		return fmt.Errorf("%w: resume needs a bounded reason", ErrInvalid)
 	}
 	tx, r, err := s.locked(ctx, project, run)
 	if err != nil {
@@ -408,17 +408,17 @@ func (s *Store) Resume(ctx context.Context, project, run, task, reason string, s
 		return err
 	}
 	if status != "blocked_environment" && status != "needs_reconciliation" {
-		return errors.New("only blocked or reconciliation tasks can resume")
+		return fmt.Errorf("%w: only blocked or reconciliation tasks can resume", ErrInvalid)
 	}
 	if (status == "needs_reconciliation" || retry != "read_only") && !stateReconciled {
-		return errors.New("operator must explicitly confirm state reconciliation or fixture reset")
+		return fmt.Errorf("%w: operator must explicitly confirm state reconciliation or fixture reset", ErrInvalid)
 	}
 	now, err := dbNow(ctx, tx)
 	if err != nil {
 		return err
 	}
 	if generation >= int64(maxAttempts) || !now.Before(deadline) {
-		return errors.New("task exhausted attempts or deadline")
+		return fmt.Errorf("%w: task exhausted attempts or deadline", ErrInvalid)
 	}
 	if _, err = tx.Exec(ctx, "UPDATE queue_tasks SET status='queued',available_at=$4,last_reason=$5 WHERE project_id=$1 AND run_id=$2 AND task_id=$3", project, run, task, now, reason); err != nil {
 		return err
@@ -446,7 +446,7 @@ func (s *Store) CloseRun(ctx context.Context, project, run string) error {
 		return err
 	}
 	if pending > 0 {
-		return fmt.Errorf("%d tasks are still pending", pending)
+		return fmt.Errorf("%w: %d tasks are still pending", ErrInvalid, pending)
 	}
 	status := "completed"
 	if bad > 0 {

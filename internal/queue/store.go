@@ -130,7 +130,7 @@ func (s *Store) GetRun(ctx context.Context, project, run string) (Run, error) {
 }
 func (s *Store) CreateRun(ctx context.Context, c RunConfig) error {
 	if !identifier.MatchString(c.ProjectID) || !identifier.MatchString(c.RunID) || c.MaxTasks < 1 || c.MaxTasks > 1e9 || c.MaxAttempts < 1 || c.MaxAttempts > 1e9 || !c.Limits.valid() {
-		return errors.New("invalid run limits or identity")
+		return fmt.Errorf("%w: invalid run limits or identity", ErrInvalid)
 	}
 	_, err := s.pool.Exec(ctx, `INSERT INTO queue_runs(project_id,run_id,max_tasks,max_attempts,limit_tokens,limit_requests,limit_seconds,limit_cost,limit_bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, c.ProjectID, c.RunID, c.MaxTasks, c.MaxAttempts, c.Limits.Tokens, c.Limits.Requests, c.Limits.WallSeconds, c.Limits.CostMicrousd, c.Limits.ArtifactBytes)
 	if err != nil {
@@ -189,7 +189,7 @@ type specProjection struct {
 
 func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options EnqueueOptions) error {
 	if options.MaxAttempts < 1 || options.MaxAttempts > 100 || options.CostMicrousd < 0 || options.CostMicrousd > 1e12 {
-		return errors.New("invalid task scheduling options")
+		return fmt.Errorf("%w: invalid task scheduling options", ErrInvalid)
 	}
 	if err := s.validator.ValidateTask(ctx, raw); err != nil {
 		return err
@@ -203,7 +203,7 @@ func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options Enqueu
 		return err
 	}
 	if spec.Budget.ArtifactBytes < 1 || spec.Budget.ArtifactBytes > 1e12 {
-		return errors.New("artifact budget exceeds supported accounting range")
+		return fmt.Errorf("%w: artifact budget exceeds supported accounting range", ErrInvalid)
 	}
 	optionJSON, _ := json.Marshal(options)
 	fingerprint := hash(append(normalized, optionJSON...))
@@ -231,7 +231,7 @@ func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options Enqueu
 		return err
 	}
 	if !spec.Deadline.After(now) || spec.CreatedAt.After(now) {
-		return errors.New("task must have a current creation time and future deadline")
+		return fmt.Errorf("%w: task must have a current creation time and future deadline", ErrInvalid)
 	}
 	if r.TaskCount >= r.MaxTasks {
 		return ErrBudget
@@ -242,7 +242,7 @@ func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options Enqueu
 			return err
 		}
 		if !exists {
-			return fmt.Errorf("dependency %q must already exist in the same run", dependency)
+			return fmt.Errorf("%w: dependency %q must already exist in the same run", ErrInvalid, dependency)
 		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO queue_tasks(project_id,run_id,task_id,spec,fingerprint,retry_class,max_attempts,reserve_tokens,reserve_requests,reserve_seconds,reserve_cost,deadline,reserve_bytes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, spec.ProjectID, spec.RunID, spec.TaskID, normalized, fingerprint, spec.RetryClass, options.MaxAttempts, spec.Budget.Tokens, spec.Budget.Requests, spec.Budget.Seconds, options.CostMicrousd, spec.Deadline, spec.Budget.ArtifactBytes)
@@ -264,7 +264,7 @@ func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options Enqueu
 }
 func (s *Store) GetTask(ctx context.Context, project, run, task string) (Task, error) {
 	var t Task
-	err := s.pool.QueryRow(ctx, "SELECT task_id,status,generation,available_at,last_reason FROM queue_tasks WHERE project_id=$1 AND run_id=$2 AND task_id=$3", project, run, task).Scan(&t.TaskID, &t.Status, &t.Generation, &t.AvailableAt, &t.LastReason)
+	err := s.pool.QueryRow(ctx, "SELECT task_id,status,generation,available_at,last_reason,(SELECT result FROM queue_attempts a WHERE a.project_id=t.project_id AND a.run_id=t.run_id AND a.task_id=t.task_id AND a.generation=t.generation) FROM queue_tasks t WHERE project_id=$1 AND run_id=$2 AND task_id=$3", project, run, task).Scan(&t.TaskID, &t.Status, &t.Generation, &t.AvailableAt, &t.LastReason, &t.Result)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}

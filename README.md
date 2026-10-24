@@ -1,8 +1,8 @@
-**Unified vulnerability harness — milestone 2**
+**Unified vulnerability harness — milestone 3**
 
 Go hosts the CLI, laboratory, PostgreSQL queue, and worker lifecycle. Rust owns versioned task, attempt, and evidence contracts, semantic validation, evidence-to-task binding, and artifact digest verification. The languages communicate through a bounded, versioned JSON subprocess protocol.
 
-This milestone adds PostgreSQL persistence, durable leases, bounded retries, cancellation, and budget accounting to the existing contracts and deterministic lab. Model/scanner handlers, execution isolation, and independent security judgment remain future work. A schema-valid evidence record is not a confirmed vulnerability.
+This milestone adds an authenticated coordinator/worker API, Rust target policy, a bounded HTTP broker and an isolated Docker inspector to the durable queue. The inspector inventories inputs; vulnerability analysis, evidence ingestion and independent security judgment remain future work. A schema-valid evidence record is not a confirmed vulnerability.
 
 **Build and verify from this directory.**
 
@@ -73,7 +73,10 @@ Metadata reports fixture identity and digest. It does not claim the fixture dige
 - internal/coreclient/: Go subprocess adapter with timeout and protocol checks.
 - internal/lab/: HTTP service and regression tests.
 - internal/queue/: pgx store, embedded migration, transactional scheduling and accounting.
-- internal/worker/: lease-aware handler execution, heartbeats and recovery polling.
+- internal/worker/: lease-aware handler execution over PostgreSQL or the API.
+- internal/coordinator/: scoped bearer authentication and remote queue client/server.
+- internal/policy/: Rust policy adapter and bounded HTTP broker.
+- internal/runner/ and cmd/inspector/: constrained Docker lifecycle and offline inspector.
 - compose.yaml: optional local PostgreSQL with persistent storage.
 - fixtures/: embedded, language-independent public dataset.
 - docs/: laboratory expectations, protocol, and language decision.
@@ -95,8 +98,10 @@ Rust tests cover all mode examples, invalid versions, unknown fields, malformed 
 
 Go tests cover normal tenant access, cross-tenant access in both variants, authentication, missing objects, concurrent identity isolation, variant metadata, mutation rejection, loopback binding, and CLI errors. Integration tests send real loopback HTTP requests, capture synthetic evidence without authorization headers, and validate/bind/hash-check that evidence through the compiled Rust binary.
 
-This milestone does not enforce DNS/egress policy for arbitrary targets, provide a sandbox, authenticate remote workers, or assess exploitability. The CLI's loopback binding limits its own lab server exposure, not future scanner traffic.
+The API authenticates scoped workers, and the first inspector uses a constrained container with mediated HTTP access. It does not assess exploitability or execute arbitrary target programs. The CLI's loopback binding limits its own lab server exposure, not future scanner traffic.
 
 **PostgreSQL queue:** See [docs/queue.md](docs/queue.md) for setup, CLI examples, retry and cancellation semantics, budget accounting, worker integration, and limitations. Run scripts/check-postgres.ps1 or scripts/check-postgres.sh with HARNESS_TEST_DATABASE_URL set; the ordinary checks do not exercise a database.
 
-**Next implementation step:** authenticated coordinator/worker service boundary and an isolated runner that enforces target policy and resource limits, followed by evidence persistence and validated scanner execution.
+**Services and isolated runner:** See [docs/services.md](docs/services.md) for a complete WSL walkthrough, API roles, policy rules, source snapshots, container limits and real Docker tests.
+
+**Next implementation step:** evidence persistence and independently validated scanner execution behind the established policy and isolation boundaries.

@@ -28,9 +28,17 @@ func main() {
 }
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: harness <schema|validate|lab|queue> [options]")
+		return errors.New("usage: harness <schema|validate|lab|queue|serve|api|auth-init|worker> [options]")
 	}
 	switch args[0] {
+	case "serve":
+		return serveCommand(ctx, args[1:], out)
+	case "api":
+		return apiCommand(ctx, args[1:], out)
+	case "auth-init":
+		return authInitCommand(args[1:], out)
+	case "worker":
+		return workerCommand(ctx, args[1:], out)
 	case "queue":
 		return queueCommand(ctx, args[1:], out)
 	case "schema":

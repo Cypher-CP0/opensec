@@ -1,0 +1,11 @@
+[
+  {
+    "policy_ref": "local-lab-v1",
+    "project_id": "lab-project",
+    "allowed_origins": ["http://127.0.0.1:8081", "http://127.0.0.1:8082"],
+    "allowed_cidrs": ["127.0.0.1/32"],
+    "allow_private": true,
+    "repository_ids": ["lab-repository"],
+    "max_input_bytes": 1048576
+  }
+]

@@ -14,8 +14,15 @@ import (
 // limits at each external call. A database lease cannot terminate a subprocess.
 type Handler func(context.Context, queue.Lease) queue.Completion
 
+type Queue interface {
+	LeaseDuration() time.Duration
+	Claim(context.Context, string, string, string) (queue.Lease, error)
+	Heartbeat(context.Context, queue.Lease) (time.Time, error)
+	Finish(context.Context, queue.Lease, queue.Completion) (string, error)
+	Reap(context.Context, string, string) (int, error)
+}
 type Worker struct {
-	Store                      *queue.Store
+	Store                      Queue
 	ProjectID, RunID, WorkerID string
 	HeartbeatEvery             time.Duration
 }

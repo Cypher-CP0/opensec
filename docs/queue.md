@@ -134,3 +134,5 @@ The queue enforces admission and accounting. Trusted handlers must enforce reque
 The queue API is for trusted local coordinators/workers with database credentials. Project scoping prevents accidental cross-run access through this API; it is not a database tenant-security boundary. Lease tokens fence claims but do not authenticate remote callers. An authenticated service boundary, isolated runners, outbound target policy, actual model/scanner handlers, evidence blob storage, and independent finding validation remain subsequent milestones.
 
 Tests cover all target modes, real contract validation, migration drift, durable reconnect, concurrent ownership, all budget dimensions, aggregate ledger consistency, duplicate receipts, retry limits/backoff, lease fencing, environment/reconciliation holds, cancellation races, deadline/dependency failure, worker heartbeats/cancellation/blocked renewals, and the CLI lifecycle.
+
+Milestone 3 now provides the authenticated API and isolated inspector described in [services.md](services.md). The direct database CLI remains a trusted operator interface.

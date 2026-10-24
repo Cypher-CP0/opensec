@@ -1,0 +1,12 @@
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal ./internal
+COPY cmd/inspector ./cmd/inspector
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags="-s -w" -o /inspector ./cmd/inspector
+
+FROM scratch
+COPY --from=build /inspector /inspector
+USER 65532:65532
+ENTRYPOINT ["/inspector"]

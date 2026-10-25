@@ -1,8 +1,8 @@
-**OpenSec vulnerability harness — milestone 4**
+**OpenSec vulnerability harness — milestone 5**
 
 Go hosts the CLI, laboratory, PostgreSQL queue, and worker lifecycle. Rust owns versioned task, attempt, and evidence contracts, semantic validation, evidence-to-task binding, and artifact digest verification. The languages communicate through a bounded, versioned JSON subprocess protocol.
 
-This milestone adds scoped evidence storage, authenticated probes, a deterministic tenant-isolation check, independently scheduled validation, and finding retrieval. A confirmed finding requires a positive discovery and fresh successful replay. Tasks without an explicit check still inventory inputs; general vulnerability discovery and model integration remain future work. See the [findings walkthrough](docs/findings.md) for setup, tests and a complete lab demonstration.
+This milestone adds a bounded CLI-backed source investigator and source-linked hybrid findings. The first adapter uses an authenticated Claude Code CLI with native tools disabled. OpenSec supplies selected source excerpts, accepts typed hypotheses, and schedules only operator-authorized probes. A confirmed finding still requires a positive discovery and fresh independent replay. See the [investigator walkthrough](docs/investigator.md) for limits, migration 003, scripted tests and the optional live demo; the [findings walkthrough](docs/findings.md) covers deterministic checks without a model.
 
 **Build and verify from this directory.**
 
@@ -78,6 +78,7 @@ Metadata reports fixture identity and digest. It does not claim the fixture dige
 - internal/policy/: Rust policy adapter, scoped target credentials and bounded HTTP broker.
 - internal/artifact/: scoped local content-addressed evidence storage.
 - internal/checks/: deterministic tenant check and redacted transcript format.
+- internal/investigator/: scoped source tools, bounded hypothesis loop and CLI adapter.
 - internal/runner/ and cmd/inspector/: constrained Docker lifecycle and offline inspector.
 - compose.yaml: optional local PostgreSQL with persistent storage.
 - fixtures/: embedded, language-independent public dataset.

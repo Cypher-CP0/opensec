@@ -1,5 +1,7 @@
 # Evidence and verified tenant-isolation findings — milestone 4
 
+For the source/model extension and current additive migration 003, see [investigator.md](investigator.md). The deterministic flow below remains supported.
+
 This milestone detects one explicit authorization failure against the lab's export JSON contract. It needs no model: the task names two identities, their tenants and two export IDs. A model can later propose checks; execution policy, evidence binding, budgets and independent reproduction remain harness responsibilities.
 
 The check makes three fresh GET requests, in order:

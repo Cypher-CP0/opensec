@@ -10,6 +10,7 @@ import (
 	"example.com/unified-harness/internal/artifact"
 	"example.com/unified-harness/internal/coordinator"
 	"example.com/unified-harness/internal/coreclient"
+	"example.com/unified-harness/internal/investigator"
 	"example.com/unified-harness/internal/policy"
 	"example.com/unified-harness/internal/queue"
 	"example.com/unified-harness/internal/runner"
@@ -212,6 +213,7 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	runID := f.String("run", "", "run ID")
 	policies := f.String("policies", "", "worker target policies")
 	snapshots := f.String("snapshots", "", "registered source archive manifest")
+	investigatorProfiles := f.String("investigators", "", "scoped CLI investigator profiles with explicit source disclosure")
 	credentials := f.String("probe-credentials", "", "operator-configured scoped target credential references")
 	image := f.String("image", "", "local sha256 Docker image ID")
 	core := f.String("core", coreclient.DefaultBinary(), "Rust validator")
@@ -254,7 +256,18 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	handler := runner.Handler{Policies: registry, Broker: policy.Broker{Policies: registry, Credentials: probeCredentials}, Executor: engine, Snapshots: registered}
+	modelProfiles, err := investigator.LoadProfiles(*investigatorProfiles)
+	if err != nil {
+		return err
+	}
+	// Fail before claiming a task or reserving its model budget when the CLI
+	// lacks mandatory isolation capabilities. This invokes help only.
+	for _, p := range modelProfiles {
+		if _, err = investigator.NewCLI(ctx, p); err != nil {
+			return fmt.Errorf("investigator profile %s: %w", p.ID, err)
+		}
+	}
+	handler := runner.Handler{InvestigatorProfiles: modelProfiles, Policies: registry, Broker: policy.Broker{Policies: registry, Credentials: probeCredentials}, Executor: engine, Snapshots: registered}
 	w := worker.Worker{Store: client, ProjectID: *project, RunID: *runID, WorkerID: info.Subject, HeartbeatEvery: client.LeaseDuration() / 3}
 	if *once {
 		if _, err = client.Reap(ctx, *project, *runID); err != nil {

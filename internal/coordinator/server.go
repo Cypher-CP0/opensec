@@ -209,16 +209,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status, err = s.store.Finish(ctx, l, *input.Completion)
 			value = map[string]string{"task_status": status}
 		}
-	case "run", "task", "claim", "cancel", "reap", "resume", "close", "evidence", "finding", "findings":
+	case "run", "task", "claim", "cancel", "reap", "resume", "close", "evidence", "finding", "findings", "investigation":
 		var scope Scope
 		if !decode(w, r, &scope) || !scopeOK(scope.ProjectID, scope.RunID) {
 			return
 		}
-		if (operation == "task" || operation == "resume") && scope.TaskID == "" {
+		if (operation == "task" || operation == "resume" || operation == "investigation") && scope.TaskID == "" {
 			fail(w, 400, "task_required")
 			return
 		}
 		switch operation {
+		case "investigation":
+			value, err = s.store.GetInvestigation(ctx, scope.ProjectID, scope.RunID, scope.TaskID)
 		case "evidence":
 			if scope.EvidenceID == "" {
 				fail(w, 400, "evidence_required")

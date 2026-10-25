@@ -91,7 +91,10 @@ func NewDocker(ctx context.Context, image string, limits Limits, command Command
 		command = DockerCommand{}
 	}
 	d := &Docker{image, limits, command}
-	check, done := context.WithTimeout(ctx, 10*time.Second)
+	// Docker Desktop on WSL can take more than ten seconds to answer info,
+	// particularly after startup. This preflight happens before task execution;
+	// container deadlines and cleanup retain their separate, shorter bounds.
+	check, done := context.WithTimeout(ctx, 30*time.Second)
 	defer done()
 	raw, err := command.Run(check, nil, 128<<10, "info", "--format", "{{json .}}")
 	if err != nil {

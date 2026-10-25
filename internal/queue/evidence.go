@@ -12,6 +12,7 @@ import (
 	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/configfile"
 	"example.com/unified-harness/internal/coreclient"
+	"example.com/unified-harness/internal/investigator"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -36,6 +37,16 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 	var started time.Time
 	if err := tx.QueryRow(ctx, "SELECT t.spec,a.started_at FROM queue_tasks t JOIN queue_attempts a USING(project_id,run_id,task_id) WHERE a.project_id=$1 AND a.run_id=$2 AND a.attempt_id=$3", l.ProjectID, l.RunID, l.AttemptID).Scan(&raw, &started); err != nil {
 		return err
+	}
+	ispec, err := investigator.Parse(raw)
+	if err != nil {
+		return invalidEvidence()
+	}
+	if ispec.Investigator != nil {
+		return s.investigationTx(ctx, tx, l, a, c, raw, ispec, started, now, r)
+	}
+	if c.Investigation != nil {
+		return invalidEvidence()
 	}
 	spec, err := checks.Parse(raw)
 	if err != nil {
@@ -119,7 +130,8 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 		return err
 	}
 	if exists {
-		return nil
+		_, err = tx.Exec(ctx, "UPDATE source_investigations SET finding_id=$4 WHERE project_id=$1 AND run_id=$2 AND probe_task_id=$3", l.ProjectID, l.RunID, l.TaskID, sub.Record.CandidateID)
+		return err
 	}
 	var validationID *string
 	status, reason := "unvalidated", "validation could not be scheduled within task capacity or deadline"
@@ -135,6 +147,10 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 	plan, _ := json.Marshal(spec.Check)
 	_, err = tx.Exec(ctx, `INSERT INTO findings(project_id,run_id,finding_id,status,origin,deployment_id,check_plan,discovery_task_id,discovery_evidence_id,validation_task_id,reason)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, l.ProjectID, l.RunID, sub.Record.CandidateID, status, spec.Target.Web.Origin, spec.Target.Web.DeploymentID, plan, l.TaskID, sub.Record.EvidenceID, validationID, reason)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, "UPDATE source_investigations SET finding_id=$4 WHERE project_id=$1 AND run_id=$2 AND probe_task_id=$3", l.ProjectID, l.RunID, l.TaskID, sub.Record.CandidateID)
 	return err
 }
 func (s *Store) enqueueValidationTx(ctx context.Context, tx pgx.Tx, raw json.RawMessage, a attempt, now time.Time) (string, error) {
@@ -199,19 +215,20 @@ func (s *Store) GetEvidence(ctx context.Context, project, run, id string) (Store
 }
 
 type Finding struct {
-	ID                   string      `json:"finding_id"`
-	Status               string      `json:"status"`
-	Origin               string      `json:"origin"`
-	DeploymentID         string      `json:"deployment_id"`
-	Check                checks.Plan `json:"check"`
-	DiscoveryTaskID      string      `json:"discovery_task_id"`
-	DiscoveryEvidenceID  string      `json:"discovery_evidence_id"`
-	ValidationTaskID     *string     `json:"validation_task_id"`
-	ValidationEvidenceID *string     `json:"validation_evidence_id"`
-	Reason               string      `json:"reason"`
-	Steps                []string    `json:"reproduction_steps"`
-	CreatedAt            time.Time   `json:"created_at"`
-	UpdatedAt            time.Time   `json:"updated_at"`
+	SourceLinks          []SourceLink `json:"source_links"`
+	ID                   string       `json:"finding_id"`
+	Status               string       `json:"status"`
+	Origin               string       `json:"origin"`
+	DeploymentID         string       `json:"deployment_id"`
+	Check                checks.Plan  `json:"check"`
+	DiscoveryTaskID      string       `json:"discovery_task_id"`
+	DiscoveryEvidenceID  string       `json:"discovery_evidence_id"`
+	ValidationTaskID     *string      `json:"validation_task_id"`
+	ValidationEvidenceID *string      `json:"validation_evidence_id"`
+	Reason               string       `json:"reason"`
+	Steps                []string     `json:"reproduction_steps"`
+	CreatedAt            time.Time    `json:"created_at"`
+	UpdatedAt            time.Time    `json:"updated_at"`
 }
 type FindingPage struct {
 	Findings   []Finding `json:"findings"`
@@ -250,6 +267,13 @@ func (s *Store) Findings(ctx context.Context, project, run, id, after string) (F
 	}
 	if err = rows.Err(); err != nil {
 		return page, err
+	}
+	rows.Close()
+	for i := range page.Findings {
+		page.Findings[i].SourceLinks, err = s.findingSources(ctx, project, run, page.Findings[i].ID)
+		if err != nil {
+			return page, err
+		}
 	}
 	if id != "" && len(page.Findings) == 0 {
 		return page, ErrNotFound

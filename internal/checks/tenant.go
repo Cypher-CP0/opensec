@@ -182,11 +182,18 @@ type ArtifactRef struct {
 	Bytes     int64  `json:"byte_length"`
 	MediaType string `json:"media_type"`
 }
+type SourceAnchor struct {
+	Path  string `json:"path"`
+	Start int    `json:"line_start"`
+	End   int    `json:"line_end"`
+}
 type Payload struct {
-	Kind          string   `json:"kind"`
-	DeploymentID  string   `json:"deployment_id"`
-	ObservationID string   `json:"observation_id"`
-	IdentityRefs  []string `json:"identity_refs"`
+	Kind           string         `json:"kind"`
+	DeploymentID   string         `json:"deployment_id,omitempty"`
+	ObservationID  string         `json:"observation_id,omitempty"`
+	IdentityRefs   []string       `json:"identity_refs,omitempty"`
+	SnapshotSHA256 string         `json:"snapshot_sha256,omitempty"`
+	Anchors        []SourceAnchor `json:"anchors,omitempty"`
 }
 type Evidence struct {
 	SchemaVersion int         `json:"schema_version"`
@@ -219,6 +226,6 @@ func NewEvidence(s Spec, attempt string, t Transcript, at time.Time) Submission 
 		Expected: "An account can read only its tenant's export", Observed: r.Verdict + ": " + r.Reason, Redaction: Redaction,
 		Limitations: []string{"Fixed export JSON contract; this check does not assess other endpoints or vulnerability classes.", "Response content and all headers omitted; content is represented by SHA-256."},
 		Artifact:    ArtifactRef{Hash(raw), int64(len(raw)), "application/json"},
-		Payload:     Payload{"http_sequence", s.Target.Web.DeploymentID, s.Target.Web.ObservationID, []string{s.Check.IdentityA, s.Check.IdentityB}},
+		Payload:     Payload{Kind: "http_sequence", DeploymentID: s.Target.Web.DeploymentID, ObservationID: s.Target.Web.ObservationID, IdentityRefs: []string{s.Check.IdentityA, s.Check.IdentityB}},
 	}, Artifact: raw}
 }

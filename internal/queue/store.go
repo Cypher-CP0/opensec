@@ -72,7 +72,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS harness_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
 		return err
 	}
-	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql"} {
+	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql", "migrations/003_investigator.sql"} {
 		raw, err := migrations.ReadFile(name)
 		if err != nil {
 			return err
@@ -119,11 +119,11 @@ func canonical(raw []byte) ([]byte, error) {
 	return json.Marshal(value)
 }
 
-const runColumns = "project_id,run_id,status,max_tasks,max_attempts,limit_tokens,limit_requests,limit_seconds,limit_cost,task_count,attempt_count,reserved_tokens,reserved_requests,reserved_seconds,reserved_cost,charged_tokens,charged_requests,charged_seconds,charged_cost,limit_bytes,reserved_bytes,charged_bytes"
+const runColumns = "project_id,run_id,status,max_tasks,max_attempts,limit_tokens,limit_requests,limit_seconds,limit_cost,task_count,attempt_count,reserved_tokens,reserved_requests,reserved_seconds,reserved_cost,charged_tokens,charged_requests,charged_seconds,charged_cost,limit_bytes,reserved_bytes,charged_bytes,model_token_overage"
 
 func scanRun(row pgx.Row) (Run, error) {
 	var r Run
-	err := row.Scan(&r.ProjectID, &r.RunID, &r.Status, &r.MaxTasks, &r.MaxAttempts, &r.Limits.Tokens, &r.Limits.Requests, &r.Limits.WallSeconds, &r.Limits.CostMicrousd, &r.TaskCount, &r.AttemptCount, &r.Reserved.Tokens, &r.Reserved.Requests, &r.Reserved.WallSeconds, &r.Reserved.CostMicrousd, &r.Charged.Tokens, &r.Charged.Requests, &r.Charged.WallSeconds, &r.Charged.CostMicrousd, &r.Limits.ArtifactBytes, &r.Reserved.ArtifactBytes, &r.Charged.ArtifactBytes)
+	err := row.Scan(&r.ProjectID, &r.RunID, &r.Status, &r.MaxTasks, &r.MaxAttempts, &r.Limits.Tokens, &r.Limits.Requests, &r.Limits.WallSeconds, &r.Limits.CostMicrousd, &r.TaskCount, &r.AttemptCount, &r.Reserved.Tokens, &r.Reserved.Requests, &r.Reserved.WallSeconds, &r.Reserved.CostMicrousd, &r.Charged.Tokens, &r.Charged.Requests, &r.Charged.WallSeconds, &r.Charged.CostMicrousd, &r.Limits.ArtifactBytes, &r.Reserved.ArtifactBytes, &r.Charged.ArtifactBytes, &r.ModelTokenOverage)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
 	}

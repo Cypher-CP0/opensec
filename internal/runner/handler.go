@@ -7,6 +7,7 @@ import (
 	"errors"
 	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/configfile"
+	"example.com/unified-harness/internal/investigator"
 	"example.com/unified-harness/internal/policy"
 	"example.com/unified-harness/internal/queue"
 	"io"
@@ -39,10 +40,13 @@ type Executor interface {
 	Execute(context.Context, time.Time, Input, int64) (json.RawMessage, error)
 }
 type Handler struct {
-	Policies  *policy.Registry
-	Broker    policy.Broker
-	Executor  Executor
-	Snapshots []Snapshot
+	InvestigatorProfiles []investigator.Profile
+	// ModelAdapter is an in-process test seam; production always uses the fixed CLI adapter.
+	ModelAdapter func(investigator.Profile) investigator.Adapter
+	Policies     *policy.Registry
+	Broker       policy.Broker
+	Executor     Executor
+	Snapshots    []Snapshot
 }
 type targetSpec struct {
 	Target struct {
@@ -75,6 +79,13 @@ func (h Handler) Run(ctx context.Context, l queue.Lease) queue.Completion {
 	check, parseErr := checks.Parse(l.Spec)
 	if parseErr != nil {
 		return finish("failed", "invalid check specification", nil)
+	}
+	ispec, parseErr := investigator.Parse(l.Spec)
+	if parseErr != nil {
+		return finish("failed", "invalid investigator specification", nil)
+	}
+	if ispec.Investigator != nil {
+		return h.runInvestigator(ctx, l, p, ispec)
 	}
 	if check.Check != nil {
 		return h.runCheck(ctx, l, p, check)

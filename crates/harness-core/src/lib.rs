@@ -136,6 +136,17 @@ pub enum RetryClass {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct InvestigatorConfig {
+    pub profile_ref: Id,
+    #[schemars(range(min = 1, max = 12))]
+    pub max_steps: u8,
+    #[schemars(length(min = 1, max = 64))]
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub probe: Option<TenantIsolationCheck>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Budget {
     #[schemars(range(min = 1))]
     pub max_wall_seconds: u32,
@@ -147,6 +158,8 @@ pub struct Budget {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TaskSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub investigator: Option<InvestigatorConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<TenantIsolationCheck>,
     #[schemars(range(min = 1, max = 1))]
@@ -179,6 +192,41 @@ impl TaskSpec {
             id.validate()?;
         }
         text(&self.question, 4096)?;
+        if let Some(i) = &self.investigator {
+            i.profile_ref.validate()?;
+            let mut paths = std::collections::HashSet::new();
+            if self.check.is_some()
+                || matches!(self.target, Target::Web { .. })
+                || !matches!(self.stage, Stage::Hunt)
+                || !matches!(self.retry_class, RetryClass::ReadOnly)
+                || !(1..=12).contains(&i.max_steps)
+                || i.paths.is_empty()
+                || i.paths.len() > 64
+                || self.budget.max_model_tokens == 0
+                || self.budget.max_artifact_bytes < 262144
+            {
+                return Err("investigator needs source, hunt, read_only, explicit bounds and artifact allowance".into());
+            }
+            for path in &i.paths {
+                if path.len() > 256
+                    || path.contains(['\\', ':', '\r', '\n', '\0'])
+                    || path
+                        .split('/')
+                        .any(|p| p.is_empty() || p == "." || p == "..")
+                    || !paths.insert(path)
+                {
+                    return Err("invalid or duplicate investigator source path".into());
+                }
+            }
+            if let Some(probe) = &i.probe {
+                probe.validate()?;
+                if !matches!(self.target, Target::Hybrid { .. }) || self.budget.max_requests < 3 {
+                    return Err(
+                        "investigator probe requires hybrid target and request allowance".into(),
+                    );
+                }
+            }
+        }
         if let Some(check) = &self.check {
             check.validate()?;
             if matches!(self.target, Target::Source { .. })

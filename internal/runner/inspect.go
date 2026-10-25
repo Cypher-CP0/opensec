@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"example.com/unified-harness/internal/checks"
+	"example.com/unified-harness/internal/investigator"
 	"example.com/unified-harness/internal/policy"
 	"io"
 	"io/fs"
@@ -19,6 +20,8 @@ const MaxInput = 32 << 20
 const MaxOutput = 1 << 20
 
 type Input struct {
+	SourceQuery  *investigator.Query  `json:"source_query,omitempty"`
+	SourcePaths  []string             `json:"source_paths,omitempty"`
 	Check        *checks.Plan         `json:"check,omitempty"`
 	Observations []policy.Observation `json:"observations"`
 	SourceTar    []byte               `json:"source_tar,omitempty"`
@@ -35,11 +38,12 @@ type Response struct {
 	SHA256 string `json:"sha256"`
 }
 type Report struct {
-	Check            *checks.Result `json:"check,omitempty"`
-	Kind             string         `json:"kind"`
-	Files            []File         `json:"files"`
-	Responses        []Response     `json:"responses"`
-	SecurityJudgment string         `json:"security_judgment"`
+	Source           *investigator.SourceResult `json:"source,omitempty"`
+	Check            *checks.Result             `json:"check,omitempty"`
+	Kind             string                     `json:"kind"`
+	Files            []File                     `json:"files"`
+	Responses        []Response                 `json:"responses"`
+	SecurityJudgment string                     `json:"security_judgment"`
 }
 
 func digest(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
@@ -95,6 +99,19 @@ func Inspect(input Input) (Report, error) {
 			return report, errors.New("observation input too large")
 		}
 		report.Responses = append(report.Responses, Response{o.URL, o.Status, len(o.Body), digest(o.Body)})
+	}
+	if input.SourceQuery != nil {
+		if input.Check != nil || len(input.Observations) > 0 {
+			return report, errors.New("source queries cannot include probes")
+		}
+		result, err := investigator.QuerySource(input.SourceTar, input.SourcePaths, *input.SourceQuery)
+		if err != nil {
+			result = investigator.SourceResult{Problem: investigator.SourceDiagnostic(err)}
+		}
+		// Archive validation above still covers all entries. Only selected source
+		// metadata belongs in a source-tool response.
+		report.Files = []File{}
+		report.Source = &result
 	}
 	if input.Check != nil {
 		if err := input.Check.Validate(); err != nil {

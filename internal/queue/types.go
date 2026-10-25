@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"example.com/unified-harness/internal/checks"
+	"example.com/unified-harness/internal/investigator"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type RunConfig struct {
 	Limits      Units  `json:"limits"`
 }
 type Run struct {
+	ModelTokenOverage int64 `json:"model_token_overage"`
 	RunConfig
 	Status       string `json:"status"`
 	TaskCount    int64  `json:"task_count"`
@@ -67,11 +69,12 @@ type Lease struct {
 	Spec         json.RawMessage `json:"spec"`
 }
 type Completion struct {
-	Evidence *checks.Submission `json:"evidence,omitempty"`
-	Outcome  string             `json:"outcome"`
-	Reason   string             `json:"reason"`
-	Usage    *Units             `json:"usage"`
-	Result   json.RawMessage    `json:"result"`
+	Investigation *investigator.Report `json:"investigation,omitempty"`
+	Evidence      *checks.Submission   `json:"evidence,omitempty"`
+	Outcome       string               `json:"outcome"`
+	Reason        string               `json:"reason"`
+	Usage         *Units               `json:"usage"`
+	Result        json.RawMessage      `json:"result"`
 }
 type Task struct {
 	Result      json.RawMessage `json:"result,omitempty"`

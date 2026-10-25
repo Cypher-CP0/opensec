@@ -28,9 +28,11 @@ func main() {
 }
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: harness <schema|validate|lab|queue|serve|api|auth-init|worker> [options]")
+		return errors.New("usage: harness <schema|validate|lab|queue|serve|api|auth-init|worker|investigator-check> [options]")
 	}
 	switch args[0] {
+	case "investigator-check":
+		return investigatorCheckCommand(ctx, args[1:], out)
 	case "serve":
 		return serveCommand(ctx, args[1:], out)
 	case "api":

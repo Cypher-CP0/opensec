@@ -36,7 +36,7 @@ func (s *Store) Claim(ctx context.Context, project, run, worker string) (Lease, 
  FROM queue_tasks t WHERE `+readyWhere+`
  AND t.reserve_tokens<=$3 AND t.reserve_requests<=$4 AND t.reserve_seconds<=$5 AND t.reserve_cost<=$6 AND t.reserve_bytes<=$7
  ORDER BY t.created_at,t.task_id FOR UPDATE OF t SKIP LOCKED LIMIT 1`,
-		project, run, r.Limits.Tokens-r.Reserved.Tokens-r.Charged.Tokens, r.Limits.Requests-r.Reserved.Requests-r.Charged.Requests, r.Limits.WallSeconds-r.Reserved.WallSeconds-r.Charged.WallSeconds, r.Limits.CostMicrousd-r.Reserved.CostMicrousd-r.Charged.CostMicrousd, r.Limits.ArtifactBytes-r.Reserved.ArtifactBytes-r.Charged.ArtifactBytes).
+		project, run, r.Limits.Tokens-r.Reserved.Tokens-r.Charged.Tokens-r.ModelTokenOverage, r.Limits.Requests-r.Reserved.Requests-r.Charged.Requests, r.Limits.WallSeconds-r.Reserved.WallSeconds-r.Charged.WallSeconds, r.Limits.CostMicrousd-r.Reserved.CostMicrousd-r.Charged.CostMicrousd, r.Limits.ArtifactBytes-r.Reserved.ArtifactBytes-r.Charged.ArtifactBytes).
 		Scan(&l.TaskID, &l.Generation, &l.Spec, &cap.Tokens, &cap.Requests, &cap.WallSeconds, &cap.CostMicrousd, &deadline, &cap.ArtifactBytes)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var ready bool
@@ -232,8 +232,8 @@ func (s *Store) Finish(ctx context.Context, l Lease, c Completion) (string, erro
 }
 func (s *Store) finishTx(ctx context.Context, tx pgx.Tx, project, run string, a attempt, c Completion, fingerprint string, now time.Time, cancelled bool) (string, error) {
 	used := a.Reserved
-	uncertain := c.Usage == nil
-	if !uncertain {
+	uncertain := c.Usage == nil || (c.Investigation != nil && !c.Investigation.UsageKnown)
+	if c.Usage != nil {
 		used = *c.Usage
 		if !used.within(a.Reserved) {
 			return "", fmt.Errorf("%w: reported usage exceeds reservation", ErrInvalid)
@@ -464,8 +464,12 @@ func (s *Store) CloseRun(ctx context.Context, project, run string) error {
 	if err = tx.QueryRow(ctx, "SELECT count(*) FROM findings WHERE project_id=$1 AND run_id=$2 AND status IN ('unvalidated','inconclusive')", project, run).Scan(&unresolved); err != nil {
 		return err
 	}
+	var unscheduled int
+	if err = tx.QueryRow(ctx, `SELECT count(*) FROM source_investigations i JOIN queue_tasks t USING(project_id,run_id,task_id) WHERE i.project_id=$1 AND i.run_id=$2 AND i.report->>'status'='hypothesis' AND i.probe_task_id IS NULL AND t.spec->'investigator'->'probe' IS NOT NULL`, project, run).Scan(&unscheduled); err != nil {
+		return err
+	}
 	status := "completed"
-	if bad > 0 || unresolved > 0 {
+	if bad > 0 || unresolved > 0 || unscheduled > 0 {
 		status = "partial"
 	}
 	if _, err = tx.Exec(ctx, "UPDATE queue_runs SET status=$3 WHERE project_id=$1 AND run_id=$2", project, run, status); err != nil {

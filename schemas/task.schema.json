@@ -40,6 +40,44 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
       "type": "string"
     },
+    "InvestigatorConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "format": "uint8",
+          "maximum": 12,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TenantIsolationCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile_ref": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "profile_ref",
+        "max_steps",
+        "paths"
+      ],
+      "type": "object"
+    },
     "RetryClass": {
       "enum": [
         "read_only",
@@ -244,6 +282,16 @@
     },
     "investigation_id": {
       "$ref": "#/$defs/Id"
+    },
+    "investigator": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InvestigatorConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "policy_ref": {
       "$ref": "#/$defs/Id"

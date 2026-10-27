@@ -1,5 +1,71 @@
 {
   "$defs": {
+    "AuthorizationCheck": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "export_a": {
+              "$ref": "#/$defs/Id"
+            },
+            "export_b": {
+              "$ref": "#/$defs/Id"
+            },
+            "identity_a_ref": {
+              "$ref": "#/$defs/Id"
+            },
+            "identity_b_ref": {
+              "$ref": "#/$defs/Id"
+            },
+            "kind": {
+              "const": "tenant_isolation",
+              "type": "string"
+            },
+            "tenant_a": {
+              "$ref": "#/$defs/Id"
+            },
+            "tenant_b": {
+              "$ref": "#/$defs/Id"
+            }
+          },
+          "required": [
+            "kind",
+            "identity_a_ref",
+            "identity_b_ref",
+            "tenant_a",
+            "tenant_b",
+            "export_a",
+            "export_b"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "identity_a_ref": {
+              "$ref": "#/$defs/Id"
+            },
+            "identity_b_ref": {
+              "$ref": "#/$defs/Id"
+            },
+            "kind": {
+              "const": "object_authorization",
+              "type": "string"
+            },
+            "object": {
+              "$ref": "#/$defs/ObjectCheck"
+            }
+          },
+          "required": [
+            "kind",
+            "identity_a_ref",
+            "identity_b_ref",
+            "object"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Budget": {
       "additionalProperties": false,
       "properties": {
@@ -60,7 +126,7 @@
         "probe": {
           "anyOf": [
             {
-              "$ref": "#/$defs/TenantIsolationCheck"
+              "$ref": "#/$defs/AuthorizationCheck"
             },
             {
               "type": "null"
@@ -75,6 +141,78 @@
         "profile_ref",
         "max_steps",
         "paths"
+      ],
+      "type": "object"
+    },
+    "ObjectCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "owner_a": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner_b": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path_template": {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        "resource_a": {
+          "$ref": "#/$defs/Id"
+        },
+        "resource_b": {
+          "$ref": "#/$defs/Id"
+        },
+        "response": {
+          "$ref": "#/$defs/ObjectResponse"
+        }
+      },
+      "required": [
+        "path_template",
+        "resource_a",
+        "resource_b",
+        "response"
+      ],
+      "type": "object"
+    },
+    "ObjectResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "owner_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protected_value": {
+          "maxLength": 256,
+          "minLength": 2,
+          "type": "string"
+        },
+        "resource_id": {
+          "maxLength": 256,
+          "minLength": 2,
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_id",
+        "protected_value"
       ],
       "type": "object"
     },
@@ -179,45 +317,32 @@
         }
       ]
     },
-    "TenantCheckKind": {
-      "enum": [
-        "tenant_isolation"
-      ],
-      "type": "string"
-    },
-    "TenantIsolationCheck": {
+    "WebInvestigatorConfig": {
       "additionalProperties": false,
       "properties": {
-        "export_a": {
-          "$ref": "#/$defs/Id"
+        "allow_mutations": {
+          "type": "boolean"
         },
-        "export_b": {
-          "$ref": "#/$defs/Id"
+        "identity_refs": {
+          "items": {
+            "$ref": "#/$defs/Id"
+          },
+          "type": "array"
         },
-        "identity_a_ref": {
-          "$ref": "#/$defs/Id"
+        "max_steps": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
-        "identity_b_ref": {
-          "$ref": "#/$defs/Id"
-        },
-        "kind": {
-          "$ref": "#/$defs/TenantCheckKind"
-        },
-        "tenant_a": {
-          "$ref": "#/$defs/Id"
-        },
-        "tenant_b": {
+        "profile_ref": {
           "$ref": "#/$defs/Id"
         }
       },
       "required": [
-        "kind",
-        "identity_a_ref",
-        "identity_b_ref",
-        "tenant_a",
-        "tenant_b",
-        "export_a",
-        "export_b"
+        "profile_ref",
+        "max_steps",
+        "identity_refs",
+        "allow_mutations"
       ],
       "type": "object"
     },
@@ -259,7 +384,7 @@
     "check": {
       "anyOf": [
         {
-          "$ref": "#/$defs/TenantIsolationCheck"
+          "$ref": "#/$defs/AuthorizationCheck"
         },
         {
           "type": "null"
@@ -324,6 +449,16 @@
     },
     "task_id": {
       "$ref": "#/$defs/Id"
+    },
+    "web_investigator": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WebInvestigatorConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

@@ -2,6 +2,11 @@
 !go.mod
 !go.sum
 !Dockerfile.runner
+!Dockerfile.workspace
+!runtime/
+!runtime/workspace/
+!runtime/workspace/**
+runtime/workspace/__pycache__/
 !.dockerignore
 !internal/
 !internal/**

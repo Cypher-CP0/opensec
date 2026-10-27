@@ -8,6 +8,13 @@ const MAX_INPUT: u64 = 4 * 1024 * 1024;
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
+    #[serde(rename = "authorize_request")]
+    AuthorizeHttp {
+        protocol_version: u8,
+        policy: harness_core::policy::Policy,
+        url: String,
+        method: String,
+    },
     ValidatePolicy {
         protocol_version: u8,
         policy: harness_core::policy::Policy,
@@ -22,6 +29,8 @@ enum Request {
         policy: harness_core::policy::Policy,
         url: String,
         addresses: Vec<String>,
+        #[serde(default)]
+        method: String,
     },
     Schemas {
         protocol_version: u8,
@@ -44,6 +53,9 @@ enum Request {
 }
 fn execute(request: Request) -> Result<Value, String> {
     let version = match &request {
+        Request::AuthorizeHttp {
+            protocol_version, ..
+        } => *protocol_version,
         Request::ValidatePolicy {
             protocol_version, ..
         }
@@ -68,9 +80,19 @@ fn execute(request: Request) -> Result<Value, String> {
         return Err("unsupported protocol version".into());
     }
     match request {
+        Request::AuthorizeHttp {
+            policy,
+            url,
+            method,
+            ..
+        } => {
+            policy.validate()?;
+            policy.authorize_request(&url, &method)?;
+            Ok(json!({"allowed":true,"origin":harness_core::policy::canonical_origin(&url)?}))
+        }
         Request::ValidatePolicy { policy, .. } => {
             policy.validate()?;
-            Ok(json!({"valid":true}))
+            Ok(json!({"valid":true,"canonical_origins":policy.canonical_origins()?}))
         }
         Request::AuthorizeTask { policy, task, .. } => {
             policy.authorize_task(&task)?;
@@ -80,9 +102,14 @@ fn execute(request: Request) -> Result<Value, String> {
             policy,
             url,
             addresses,
+            method,
             ..
         } => {
-            policy.authorize_network(&url, &addresses)?;
+            policy.authorize_network_method(
+                &url,
+                if method.is_empty() { "GET" } else { &method },
+                &addresses,
+            )?;
             Ok(json!({"allowed":true}))
         }
         Request::Schemas { .. } => Ok(harness_core::schemas()),

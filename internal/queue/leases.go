@@ -55,6 +55,13 @@ func (s *Store) Claim(ctx context.Context, project, run, worker string) (Lease, 
 	if err != nil {
 		return Lease{}, err
 	}
+	if s.traffic != nil {
+		p, err := s.traffic.AuthorizeTask(ctx, l.Spec)
+		if err != nil {
+			return Lease{}, fmt.Errorf("%w: task policy no longer authorizes execution", ErrInvalid)
+		}
+		l.Traffic = p.Traffic
+	}
 	l.Reserved = cap
 	l.ProjectID = project
 	l.RunID = run
@@ -209,6 +216,15 @@ func (s *Store) Finish(ctx context.Context, l Lease, c Completion) (string, erro
 	if r.Status != "active" || !a.live(now) {
 		return "", ErrLease
 	}
+	if c.Usage != nil {
+		var admitted int64
+		if err = tx.QueryRow(ctx, "SELECT count(*) FROM traffic_permits WHERE project_id=$1 AND run_id=$2 AND attempt_id=$3", l.ProjectID, l.RunID, l.AttemptID).Scan(&admitted); err != nil {
+			return "", err
+		}
+		if c.Usage.Requests < admitted {
+			return "", fmt.Errorf("%w: usage omits admitted target requests", ErrInvalid)
+		}
+	}
 	if err = s.evidenceTx(ctx, tx, l, a, c, now, r); err != nil {
 		return "", err
 	}
@@ -232,7 +248,7 @@ func (s *Store) Finish(ctx context.Context, l Lease, c Completion) (string, erro
 }
 func (s *Store) finishTx(ctx context.Context, tx pgx.Tx, project, run string, a attempt, c Completion, fingerprint string, now time.Time, cancelled bool) (string, error) {
 	used := a.Reserved
-	uncertain := c.Usage == nil || (c.Investigation != nil && !c.Investigation.UsageKnown)
+	uncertain := c.Usage == nil || (c.Investigation != nil && !c.Investigation.UsageKnown) || (c.WebInvestigation != nil && !c.WebInvestigation.UsageKnown)
 	if c.Usage != nil {
 		used = *c.Usage
 		if !used.within(a.Reserved) {

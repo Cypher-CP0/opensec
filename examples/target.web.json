@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "project_id": "pilot-project",
+  "policy_ref": "pilot-v1",
+  "origin": "https://api.example.test",
+  "deployment_id": "pilot-staging",
+  "allowed_cidrs": ["192.0.2.0/24"],
+  "allow_private": false,
+  "traffic": {"min_interval_ms": 500, "max_concurrent": 1, "backoff_seconds": 30},
+  "identities": [
+    {"identity_ref": "reader-a", "auth_kind": "bearer", "token_file": "../work/secrets/reader-a.token"},
+    {"identity_ref": "reader-b", "auth_kind": "bearer", "token_file": "../work/secrets/reader-b.token"}
+  ],
+  "checks": [
+    {
+      "check_id": "invoice-access",
+      "plan": {
+        "kind": "object_authorization",
+        "identity_a_ref": "reader-a",
+        "identity_b_ref": "reader-b",
+        "object": {
+          "path_template": "/api/invoices/{id}",
+          "resource_a": "invoice-a",
+          "resource_b": "invoice-b",
+          "owner_a": "account-a",
+          "owner_b": "account-b",
+          "response": {
+            "resource_id": "/data/id",
+            "owner_id": "/data/account_id",
+            "protected_value": "/data/details"
+          }
+        }
+      }
+    }
+  ],
+  "max_attempts": 1,
+  "deadline_seconds": 3600,
+  "max_wall_seconds": 120,
+  "max_artifact_bytes": 262144
+}

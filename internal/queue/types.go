@@ -7,6 +7,8 @@ import (
 	"errors"
 	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/investigator"
+	"example.com/unified-harness/internal/policy"
+	"example.com/unified-harness/internal/webinvestigator"
 	"time"
 )
 
@@ -56,25 +58,27 @@ type EnqueueOptions struct {
 	CostMicrousd int64 `json:"cost_microusd"`
 }
 type Lease struct {
-	Reserved     Units           `json:"reserved"`
-	ProjectID    string          `json:"project_id"`
-	RunID        string          `json:"run_id"`
-	TaskID       string          `json:"task_id"`
-	AttemptID    string          `json:"attempt_id"`
-	WorkerID     string          `json:"worker_id"`
-	Generation   int64           `json:"generation"`
-	Token        string          `json:"token"`
-	ExpiresAt    time.Time       `json:"expires_at"`
-	HardDeadline time.Time       `json:"hard_deadline"`
-	Spec         json.RawMessage `json:"spec"`
+	Traffic      *policy.TrafficLimits `json:"traffic,omitempty"`
+	Reserved     Units                 `json:"reserved"`
+	ProjectID    string                `json:"project_id"`
+	RunID        string                `json:"run_id"`
+	TaskID       string                `json:"task_id"`
+	AttemptID    string                `json:"attempt_id"`
+	WorkerID     string                `json:"worker_id"`
+	Generation   int64                 `json:"generation"`
+	Token        string                `json:"token"`
+	ExpiresAt    time.Time             `json:"expires_at"`
+	HardDeadline time.Time             `json:"hard_deadline"`
+	Spec         json.RawMessage       `json:"spec"`
 }
 type Completion struct {
-	Investigation *investigator.Report `json:"investigation,omitempty"`
-	Evidence      *checks.Submission   `json:"evidence,omitempty"`
-	Outcome       string               `json:"outcome"`
-	Reason        string               `json:"reason"`
-	Usage         *Units               `json:"usage"`
-	Result        json.RawMessage      `json:"result"`
+	Investigation    *investigator.Report    `json:"investigation,omitempty"`
+	WebInvestigation *webinvestigator.Report `json:"web_investigation,omitempty"`
+	Evidence         *checks.Submission      `json:"evidence,omitempty"`
+	Outcome          string                  `json:"outcome"`
+	Reason           string                  `json:"reason"`
+	Usage            *Units                  `json:"usage"`
+	Result           json.RawMessage         `json:"result"`
 }
 type Task struct {
 	Result      json.RawMessage `json:"result,omitempty"`

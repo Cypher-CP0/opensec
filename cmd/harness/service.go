@@ -14,6 +14,7 @@ import (
 	"example.com/unified-harness/internal/policy"
 	"example.com/unified-harness/internal/queue"
 	"example.com/unified-harness/internal/runner"
+	"example.com/unified-harness/internal/webinvestigator"
 	"example.com/unified-harness/internal/worker"
 	"flag"
 	"fmt"
@@ -214,6 +215,9 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	policies := f.String("policies", "", "worker target policies")
 	snapshots := f.String("snapshots", "", "registered source archive manifest")
 	investigatorProfiles := f.String("investigators", "", "scoped CLI investigator profiles with explicit source disclosure")
+	webProfilesPath := f.String("web-investigators", "", "scoped CLI web investigator profiles")
+	workspaceImage := f.String("workspace-image", "", "local immutable Linux browser workspace image ID")
+	workspaceSeccomp := f.String("workspace-seccomp", "runtime/workspace/seccomp.json", "pinned browser sandbox seccomp profile")
 	credentials := f.String("probe-credentials", "", "operator-configured scoped target credential references")
 	image := f.String("image", "", "local sha256 Docker image ID")
 	core := f.String("core", coreclient.DefaultBinary(), "Rust validator")
@@ -244,6 +248,9 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if registry.RequiresTraffic(*project) && !info.TrafficAdmission {
+		return errors.New("coordinator does not support shared target traffic admission")
+	}
 	registered, err := runner.LoadSnapshots(*snapshots)
 	if err != nil {
 		return err
@@ -267,7 +274,26 @@ func workerCommand(ctx context.Context, args []string, out io.Writer) error {
 			return fmt.Errorf("investigator profile %s: %w", p.ID, err)
 		}
 	}
-	handler := runner.Handler{InvestigatorProfiles: modelProfiles, Policies: registry, Broker: policy.Broker{Policies: registry, Credentials: probeCredentials}, Executor: engine, Snapshots: registered}
+	webProfiles, err := webinvestigator.LoadProfiles(*webProfilesPath)
+	if err != nil {
+		return err
+	}
+	for _, p := range webProfiles {
+		if _, err = investigator.NewCLI(ctx, webinvestigator.CLIProfile(p)); err != nil {
+			return fmt.Errorf("web investigator profile %s: %w", p.ID, err)
+		}
+	}
+	var workspace *runner.WorkspaceDocker
+	if len(webProfiles) > 0 {
+		if *workspaceImage == "" {
+			return errors.New("--workspace-image is required with --web-investigators")
+		}
+		workspace, err = runner.NewWorkspaceDocker(ctx, *workspaceImage, *workspaceSeccomp)
+		if err != nil {
+			return err
+		}
+	}
+	handler := runner.Handler{TrafficStore: client, InvestigatorProfiles: modelProfiles, WebProfiles: webProfiles, Workspace: workspace, Policies: registry, Broker: policy.Broker{Policies: registry, Credentials: probeCredentials}, Executor: engine, Snapshots: registered}
 	w := worker.Worker{Store: client, ProjectID: *project, RunID: *runID, WorkerID: info.Subject, HeartbeatEvery: client.LeaseDuration() / 3}
 	if *once {
 		if _, err = client.Reap(ctx, *project, *runID); err != nil {

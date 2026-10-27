@@ -6,6 +6,10 @@ use url::Url;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_endpoints: Option<Vec<Endpoint>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic: Option<TrafficLimits>,
     pub policy_ref: Id,
     pub project_id: Id,
     pub allowed_origins: Vec<String>,
@@ -15,6 +19,51 @@ pub struct Policy {
     pub max_input_bytes: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Endpoint {
+    pub method: String,
+    pub path_template: String,
+    #[serde(default)]
+    pub allow_query: bool,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrafficLimits {
+    pub min_interval_ms: u32,
+    pub max_concurrent: u32,
+    pub backoff_seconds: u32,
+}
+fn endpoint_template(s: &str) -> bool {
+    if s == "/" {
+        return true;
+    }
+    if s.len() > 512 || !s.starts_with('/') || s.matches("{id}").count() > 1 {
+        return false;
+    }
+    let parts: Vec<_> = s[1..].split('/').collect();
+    parts.len() <= 32
+        && parts.iter().all(|p| {
+            *p == "{id}"
+                || (!p.is_empty()
+                    && *p != "."
+                    && *p != ".."
+                    && p.bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c)))
+        })
+}
+fn endpoint_matches(template: &str, path: &str) -> bool {
+    let expected: Vec<_> = template.split('/').collect();
+    let actual: Vec<_> = path.split('/').collect();
+    expected.len() == actual.len()
+        && expected.iter().zip(actual).all(|(e, a)| {
+            if *e == "{id}" {
+                Id(a.to_string()).validate().is_ok()
+            } else {
+                *e == a
+            }
+        })
+}
 fn url(raw: &str) -> Result<Url, String> {
     if !raw.is_ascii() || raw.bytes().any(|b| b.is_ascii_whitespace() || b == b'\\') {
         return Err("policy URLs must be ASCII without whitespace or backslashes".into());
@@ -86,8 +135,44 @@ fn permitted_address(ip: IpAddr, private: bool) -> bool {
         }
     }
 }
+pub fn canonical_origin(raw: &str) -> Result<String, String> {
+    Ok(url(raw)?.origin().ascii_serialization())
+}
 impl Policy {
+    pub fn canonical_origins(&self) -> Result<Vec<String>, String> {
+        self.allowed_origins
+            .iter()
+            .map(|raw| canonical_origin(raw))
+            .collect()
+    }
     pub fn validate(&self) -> Result<(), String> {
+        if let Some(t) = &self.traffic {
+            if !(1..=60000).contains(&t.min_interval_ms)
+                || !(1..=16).contains(&t.max_concurrent)
+                || !(1..=300).contains(&t.backoff_seconds)
+                || self.allowed_endpoints.is_none()
+            {
+                return Err("traffic controls require bounded settings and endpoint rules".into());
+            }
+        }
+        if let Some(endpoints) = &self.allowed_endpoints {
+            if endpoints.is_empty() || endpoints.len() > 128 {
+                return Err("provide 1..128 endpoint rules".into());
+            }
+            let mut seen = std::collections::HashSet::new();
+            for e in endpoints {
+                if !matches!(
+                    e.method.as_str(),
+                    "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE"
+                ) || !endpoint_template(&e.path_template)
+                    || !seen.insert((&e.method, &e.path_template))
+                {
+                    return Err(
+                        "endpoint rules require distinct bounded method/template pairs".into(),
+                    );
+                }
+            }
+        }
         self.policy_ref.validate()?;
         self.project_id.validate()?;
         if self.allowed_origins.len() > 64
@@ -126,6 +211,29 @@ impl Policy {
         }
         Ok(())
     }
+    pub fn authorize_request(&self, raw: &str, method: &str) -> Result<(), String> {
+        self.authorize_url(raw)?;
+        if !matches!(method, "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE")
+            || (method != "GET" && self.allowed_endpoints.is_none())
+        {
+            return Err("method requires explicit endpoint authority".into());
+        }
+        if let Some(endpoints) = &self.allowed_endpoints {
+            let u = url(raw)?;
+            let raw_path = raw.split('?').next().unwrap_or(raw);
+            if raw_path.contains('%')
+                || raw_path.split('/').any(|p| p == "." || p == "..")
+                || !endpoints.iter().any(|e| {
+                    e.method == method
+                        && (u.query().is_none() || e.allow_query)
+                        && endpoint_matches(&e.path_template, u.path())
+                })
+            {
+                return Err("request endpoint is outside the policy".into());
+            }
+        }
+        Ok(())
+    }
     pub fn authorize_task(&self, task: &TaskSpec) -> Result<(), String> {
         self.validate()?;
         task.validate()?;
@@ -140,17 +248,44 @@ impl Policy {
         if source.is_some_and(|s| !self.repository_ids.iter().any(|r| r.0 == s.repository_id.0)) {
             return Err("repository is outside the policy".into());
         }
+        if task.web_investigator.is_some()
+            && (self.traffic.is_none() || self.allowed_endpoints.is_none())
+        {
+            return Err(
+                "web investigation requires explicit endpoints and shared traffic controls".into(),
+            );
+        }
         if let Some(w) = web {
             self.authorize_url(&w.origin)?;
             for seed in &w.seed_urls {
-                self.authorize_url(seed)?;
+                self.authorize_request(seed, "GET")?;
+            }
+            let check = task
+                .check
+                .as_ref()
+                .or_else(|| task.investigator.as_ref().and_then(|i| i.probe.as_ref()));
+            if let Some(check) = check {
+                for path in check.paths() {
+                    self.authorize_request(
+                        &format!("{}{}", w.origin.trim_end_matches('/'), path),
+                        "GET",
+                    )?;
+                }
             }
         }
         Ok(())
     }
     pub fn authorize_network(&self, raw: &str, addresses: &[String]) -> Result<(), String> {
+        self.authorize_network_method(raw, "GET", addresses)
+    }
+    pub fn authorize_network_method(
+        &self,
+        raw: &str,
+        method: &str,
+        addresses: &[String],
+    ) -> Result<(), String> {
         self.validate()?;
-        self.authorize_url(raw)?;
+        self.authorize_request(raw, method)?;
         if addresses.is_empty() || addresses.len() > 64 {
             return Err("a bounded nonempty resolved address set is required".into());
         }

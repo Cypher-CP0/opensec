@@ -11,13 +11,15 @@ import (
 )
 
 type Policy struct {
-	Ref           string   `json:"policy_ref"`
-	ProjectID     string   `json:"project_id"`
-	Origins       []string `json:"allowed_origins"`
-	CIDRs         []string `json:"allowed_cidrs"`
-	AllowPrivate  bool     `json:"allow_private"`
-	Repositories  []string `json:"repository_ids"`
-	MaxInputBytes int64    `json:"max_input_bytes"`
+	Endpoints     []Endpoint     `json:"allowed_endpoints,omitempty"`
+	Traffic       *TrafficLimits `json:"traffic,omitempty"`
+	Ref           string         `json:"policy_ref"`
+	ProjectID     string         `json:"project_id"`
+	Origins       []string       `json:"allowed_origins"`
+	CIDRs         []string       `json:"allowed_cidrs"`
+	AllowPrivate  bool           `json:"allow_private"`
+	Repositories  []string       `json:"repository_ids"`
+	MaxInputBytes int64          `json:"max_input_bytes"`
 }
 type Registry struct {
 	core     string
@@ -36,9 +38,29 @@ func New(ctx context.Context, entries []Policy, core string) (*Registry, error) 
 		return nil, errors.New("provide 1..128 policies")
 	}
 	r := &Registry{core: core, policies: map[string]Policy{}}
+	traffic := map[string]*TrafficLimits{}
 	for _, p := range entries {
-		if _, err := coreclient.Call(ctx, core, map[string]any{"operation": "validate_policy", "policy": p}); err != nil {
+		if p.Endpoints != nil && len(p.Endpoints) == 0 {
+			return nil, errors.New("endpoint rules cannot be empty")
+		}
+		raw, err := coreclient.Call(ctx, core, map[string]any{"operation": "validate_policy", "policy": p})
+		if err != nil {
 			return nil, err
+		}
+		var validated struct {
+			Origins []string `json:"canonical_origins"`
+		}
+		if json.Unmarshal(raw, &validated) != nil || len(validated.Origins) != len(p.Origins) {
+			return nil, errors.New("invalid canonical policy origins")
+		}
+		for _, origin := range validated.Origins {
+			key := p.ProjectID + "/" + origin
+			if previous, ok := traffic[key]; ok {
+				if (previous == nil) != (p.Traffic == nil) || previous != nil && *previous != *p.Traffic {
+					return nil, errors.New("conflicting traffic limits for the same project and origin")
+				}
+			}
+			traffic[key] = p.Traffic
 		}
 		key := p.ProjectID + "/" + p.Ref
 		if _, ok := r.policies[key]; ok {
@@ -47,6 +69,14 @@ func New(ctx context.Context, entries []Policy, core string) (*Registry, error) 
 		r.policies[key] = p
 	}
 	return r, nil
+}
+func (r *Registry) RequiresTraffic(project string) bool {
+	for _, p := range r.policies {
+		if p.ProjectID == project && p.Traffic != nil {
+			return true
+		}
+	}
+	return false
 }
 func (r *Registry) AuthorizeTask(ctx context.Context, raw json.RawMessage) (Policy, error) {
 	var ref struct {
@@ -63,7 +93,30 @@ func (r *Registry) AuthorizeTask(ctx context.Context, raw json.RawMessage) (Poli
 	_, err := coreclient.Call(ctx, r.core, map[string]any{"operation": "authorize_task", "policy": p, "task": raw})
 	return p, err
 }
+func (r *Registry) AuthorizeRequest(ctx context.Context, p Policy, raw string) error {
+	_, err := r.RequestOrigin(ctx, p, raw)
+	return err
+}
+func (r *Registry) RequestOrigin(ctx context.Context, p Policy, raw string) (string, error) {
+	return r.MethodOrigin(ctx, p, raw, "GET")
+}
+func (r *Registry) MethodOrigin(ctx context.Context, p Policy, raw, method string) (string, error) {
+	body, err := coreclient.Call(ctx, r.core, map[string]any{"operation": "authorize_request", "policy": p, "url": raw, "method": method})
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Origin string `json:"origin"`
+	}
+	if json.Unmarshal(body, &result) != nil || result.Origin == "" {
+		return "", errors.New("invalid request origin")
+	}
+	return result.Origin, nil
+}
 func (r *Registry) AuthorizeNetwork(ctx context.Context, p Policy, url string, addresses []string) error {
-	_, err := coreclient.Call(ctx, r.core, map[string]any{"operation": "authorize_network", "policy": p, "url": url, "addresses": addresses})
+	return r.AuthorizeNetworkMethod(ctx, p, url, "GET", addresses)
+}
+func (r *Registry) AuthorizeNetworkMethod(ctx context.Context, p Policy, url, method string, addresses []string) error {
+	_, err := coreclient.Call(ctx, r.core, map[string]any{"operation": "authorize_network", "policy": p, "url": url, "method": method, "addresses": addresses})
 	return err
 }

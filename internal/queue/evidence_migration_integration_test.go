@@ -59,7 +59,7 @@ func TestEvidenceMigrationUpgradesExistingQueue(t *testing.T) {
 		t.Fatal(run, err)
 	}
 	var count int
-	if err = s.pool.QueryRow(ctx, "SELECT count(*) FROM harness_migrations").Scan(&count); err != nil || count != 3 {
+	if err = s.pool.QueryRow(ctx, "SELECT count(*) FROM harness_migrations").Scan(&count); err != nil || count != 4 {
 		t.Fatal(count, err)
 	}
 }

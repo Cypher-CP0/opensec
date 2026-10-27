@@ -1,0 +1,17 @@
+FROM node:24-bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive PLAYWRIGHT_BROWSERS_PATH=/ms-playwright NODE_ENV=production HOME=/work TMPDIR=/tmp XDG_CACHE_HOME=/tmp/.cache
+WORKDIR /opt/opensec
+COPY runtime/workspace/package.json runtime/workspace/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+ && npx playwright install --with-deps chromium \
+ && apt-get update && apt-get install -y --no-install-recommends python3 jq bash \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin investigator
+COPY runtime/workspace/server.mjs /opt/opensec/server.mjs
+COPY runtime/workspace/curl.py /usr/local/bin/opensec-http
+RUN chmod 0555 /usr/local/bin/opensec-http \
+ && ln -s /usr/local/bin/opensec-http /usr/local/bin/curl \
+ && chmod 0555 /opt/opensec/server.mjs
+USER 10001:10001
+WORKDIR /work
+ENTRYPOINT ["node","/opt/opensec/server.mjs"]

@@ -4,6 +4,8 @@
 /work/
 /artifacts/
 *.log
+__pycache__/
 
 *.token
 .env
+/docs/

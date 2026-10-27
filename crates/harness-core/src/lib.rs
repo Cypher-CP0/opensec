@@ -143,7 +143,15 @@ pub struct InvestigatorConfig {
     #[schemars(length(min = 1, max = 64))]
     pub paths: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub probe: Option<TenantIsolationCheck>,
+    pub probe: Option<AuthorizationCheck>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WebInvestigatorConfig {
+    pub profile_ref: Id,
+    pub max_steps: u32,
+    pub identity_refs: Vec<Id>,
+    pub allow_mutations: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -159,9 +167,11 @@ pub struct Budget {
 #[serde(deny_unknown_fields)]
 pub struct TaskSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_investigator: Option<WebInvestigatorConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub investigator: Option<InvestigatorConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub check: Option<TenantIsolationCheck>,
+    pub check: Option<AuthorizationCheck>,
     #[schemars(range(min = 1, max = 1))]
     pub schema_version: u8,
     pub task_id: Id,
@@ -192,6 +202,31 @@ impl TaskSpec {
             id.validate()?;
         }
         text(&self.question, 4096)?;
+        if let Some(i) = &self.web_investigator {
+            i.profile_ref.validate()?;
+            let mut identities = std::collections::HashSet::new();
+            for identity in &i.identity_refs {
+                identity.validate()?;
+                if !identities.insert(&identity.0) {
+                    return Err("duplicate web identity".into());
+                }
+            }
+            if !matches!(self.target, Target::Web { .. })
+                || !matches!(self.stage, Stage::Hunt)
+                || self.check.is_some()
+                || self.investigator.is_some()
+                || !(1..=24).contains(&i.max_steps)
+                || i.identity_refs.len() > 8
+                || self.budget.max_model_tokens == 0
+                || self.budget.max_requests == 0
+                || self.budget.max_artifact_bytes < 262144
+                || (i.allow_mutations
+                    && !matches!(self.retry_class, RetryClass::RequiresReconciliation))
+                || (!i.allow_mutations && !matches!(self.retry_class, RetryClass::ReadOnly))
+            {
+                return Err("web investigator requires web-only hunt, bounded tools and explicit mutation reconciliation".into());
+            }
+        }
         if let Some(i) = &self.investigator {
             i.profile_ref.validate()?;
             let mut paths = std::collections::HashSet::new();
@@ -229,13 +264,15 @@ impl TaskSpec {
         }
         if let Some(check) = &self.check {
             check.validate()?;
+            let preflight = matches!(self.stage, Stage::Prepare)
+                && matches!(check, AuthorizationCheck::ObjectAuthorization { .. });
             if matches!(self.target, Target::Source { .. })
-                || !matches!(self.stage, Stage::Hunt | Stage::Validate)
+                || !(preflight || matches!(self.stage, Stage::Hunt | Stage::Validate))
                 || !matches!(self.retry_class, RetryClass::ReadOnly)
-                || self.budget.max_requests < 3
+                || self.budget.max_requests < if preflight { 2 } else { 3 }
                 || self.budget.max_artifact_bytes < 8192
             {
-                return Err("tenant check requires web input, hunt/validate, read_only and sufficient probe budgets".into());
+                return Err("authorization check requires web input, prepare (object only)/hunt/validate, read_only and sufficient probe budgets".into());
             }
         }
         if self.deadline <= self.created_at {
@@ -366,6 +403,7 @@ pub enum EvidencePayload {
     BrowserObservation {
         deployment_id: Id,
         observation_id: Id,
+        #[serde(default)]
         identity_refs: Vec<Id>,
         browser_version: String,
     },
@@ -575,40 +613,5 @@ pub fn validate_document(kind: &str, document: Value) -> Result<(), String> {
 
 pub mod policy;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct TenantIsolationCheck {
-    pub kind: TenantCheckKind,
-    pub identity_a_ref: Id,
-    pub identity_b_ref: Id,
-    pub tenant_a: Id,
-    pub tenant_b: Id,
-    pub export_a: Id,
-    pub export_b: Id,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum TenantCheckKind {
-    TenantIsolation,
-}
-impl TenantIsolationCheck {
-    fn validate(&self) -> Result<(), String> {
-        for id in [
-            &self.identity_a_ref,
-            &self.identity_b_ref,
-            &self.tenant_a,
-            &self.tenant_b,
-            &self.export_a,
-            &self.export_b,
-        ] {
-            id.validate()?;
-        }
-        if self.identity_a_ref.0 == self.identity_b_ref.0
-            || self.tenant_a.0 == self.tenant_b.0
-            || self.export_a.0 == self.export_b.0
-        {
-            return Err("tenant check needs distinct identities, tenants and exports".into());
-        }
-        Ok(())
-    }
-}
+mod authorization;
+pub use authorization::AuthorizationCheck;

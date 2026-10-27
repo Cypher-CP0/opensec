@@ -152,3 +152,20 @@ fn published_schemas_match_rust_contracts() {
         );
     }
 }
+
+#[test]
+fn anonymous_browser_observation_defaults_to_no_identities() {
+    let payload: harness_core::EvidencePayload = serde_json::from_value(serde_json::json!({
+        "kind": "browser_observation",
+        "deployment_id": "deployment",
+        "observation_id": "observation",
+        "browser_version": "test-browser"
+    }))
+    .unwrap();
+    match payload {
+        harness_core::EvidencePayload::BrowserObservation { identity_refs, .. } => {
+            assert!(identity_refs.is_empty());
+        }
+        _ => panic!("wrong evidence kind"),
+    }
+}

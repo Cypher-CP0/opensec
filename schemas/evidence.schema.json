@@ -120,6 +120,7 @@
               "$ref": "#/$defs/Id"
             },
             "identity_refs": {
+              "default": [],
               "items": {
                 "$ref": "#/$defs/Id"
               },
@@ -137,7 +138,6 @@
             "kind",
             "deployment_id",
             "observation_id",
-            "identity_refs",
             "browser_version"
           ],
           "type": "object"

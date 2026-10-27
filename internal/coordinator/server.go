@@ -25,6 +25,9 @@ func New(store *queue.Store, auth *Auth, policies *policy.Registry) (*Server, er
 	if store == nil || auth == nil || policies == nil {
 		return nil, errors.New("store, authentication, and policies are required")
 	}
+	if err := store.ConfigureTraffic(policies); err != nil {
+		return nil, err
+	}
 	return &Server{store, auth, policies, make(chan struct{}, 64)}, nil
 }
 
@@ -47,6 +50,7 @@ type LeaseRequest struct {
 	Completion *queue.Completion `json:"completion,omitempty"`
 }
 type Info struct {
+	TrafficAdmission  bool   `json:"traffic_admission"`
 	Subject           string `json:"subject"`
 	Role              string `json:"role"`
 	LeaseMilliseconds int64  `json:"lease_milliseconds"`
@@ -116,7 +120,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/info" {
-		respond(w, 200, Info{principal.Subject, principal.Role, s.store.LeaseDuration().Milliseconds()})
+		respond(w, 200, Info{Subject: principal.Subject, Role: principal.Role, LeaseMilliseconds: s.store.LeaseDuration().Milliseconds(), TrafficAdmission: true})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -138,7 +142,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "not_found")
 		return
 	}
-	workerOp := operation == "claim" || operation == "heartbeat" || operation == "finish"
+	workerOp := operation == "claim" || operation == "heartbeat" || operation == "finish" || operation == "traffic-acquire" || operation == "traffic-release"
 	controlOp := operation == "create-run" || operation == "enqueue" || operation == "cancel" || operation == "resume" || operation == "close"
 	if (workerOp && principal.Role != "worker") || (controlOp && principal.Role != "operator") {
 		fail(w, 403, "forbidden")
@@ -179,6 +183,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = s.store.Enqueue(ctx, input.Task, input.Options)
+	case "traffic-acquire", "traffic-release":
+		var input TrafficRequest
+		if !decode(w, r, &input) || !scopeOK(input.Lease.ProjectID, input.Lease.RunID) {
+			return
+		}
+		if input.Lease.WorkerID != principal.Subject {
+			fail(w, 403, "worker_mismatch")
+			return
+		}
+		if operation == "traffic-acquire" {
+			if input.Status != 0 {
+				fail(w, 400, "unexpected_status")
+				return
+			}
+			if input.Method == "" {
+				input.Method = "GET"
+			}
+			value, err = s.store.AcquireTrafficMethod(ctx, input.Lease, input.URL, input.Method, input.RequestID)
+		} else {
+			if input.URL != "" || input.Method != "" {
+				fail(w, 400, "unexpected_url")
+				return
+			}
+			err = s.store.ReleaseTraffic(ctx, input.Lease, input.RequestID, input.Status)
+		}
 	case "heartbeat", "finish":
 		var input LeaseRequest
 		if !decode(w, r, &input) {
@@ -209,7 +238,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status, err = s.store.Finish(ctx, l, *input.Completion)
 			value = map[string]string{"task_status": status}
 		}
-	case "run", "task", "claim", "cancel", "reap", "resume", "close", "evidence", "finding", "findings", "investigation":
+	case "run", "task", "claim", "cancel", "reap", "resume", "close", "evidence", "finding", "findings", "investigation", "report":
 		var scope Scope
 		if !decode(w, r, &scope) || !scopeOK(scope.ProjectID, scope.RunID) {
 			return
@@ -237,6 +266,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			value, err = s.store.Findings(ctx, scope.ProjectID, scope.RunID, scope.FindingID, scope.After)
+		case "report":
+			if scope.TaskID != "" || scope.EvidenceID != "" || scope.FindingID != "" || scope.After != "" || scope.Reason != "" || scope.StateReconciled {
+				fail(w, 400, "run_scope_required")
+				return
+			}
+			value, err = s.store.Report(ctx, scope.ProjectID, scope.RunID)
 		case "run":
 			value, err = s.store.GetRun(ctx, scope.ProjectID, scope.RunID)
 		case "task":

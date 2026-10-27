@@ -31,6 +31,17 @@ func credential(token, subject, role string) Credential {
 }
 func setupAPI(t *testing.T, origins ...string) (*queue.Store, *httptest.Server, *Client, *Client) {
 	t.Helper()
+	if len(origins) == 0 {
+		origins = []string{"http://127.0.0.1:8081"}
+	}
+	policies, err := policy.New(t.Context(), []policy.Policy{{Ref: "local-lab-v1", ProjectID: "lab-project", Origins: origins, CIDRs: []string{"127.0.0.1/32"}, AllowPrivate: true, Repositories: []string{"investigator-fixture"}, MaxInputBytes: 1 << 20}}, testdb.Core())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return setupAPIUsing(t, policies)
+}
+func setupAPIUsing(t *testing.T, policies *policy.Registry) (*queue.Store, *httptest.Server, *Client, *Client) {
+	t.Helper()
 	store, err := queue.Open(t.Context(), testdb.New(t), queue.CoreValidator{Binary: testdb.Core()}, queue.DefaultSettings())
 	if err != nil {
 		t.Fatal(err)
@@ -40,13 +51,6 @@ func setupAPI(t *testing.T, origins ...string) (*queue.Store, *httptest.Server, 
 		t.Fatal(err)
 	}
 	auth, err := NewAuth([]Credential{credential(opToken, "operator", "operator"), credential(workerToken, "worker-one", "worker"), credential(otherToken, "worker-two", "worker")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(origins) == 0 {
-		origins = []string{"http://127.0.0.1:8081"}
-	}
-	policies, err := policy.New(t.Context(), []policy.Policy{{Ref: "local-lab-v1", ProjectID: "lab-project", Origins: origins, CIDRs: []string{"127.0.0.1/32"}, AllowPrivate: true, Repositories: []string{"investigator-fixture"}, MaxInputBytes: 1 << 20}}, testdb.Core())
 	if err != nil {
 		t.Fatal(err)
 	}

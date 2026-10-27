@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -19,13 +18,14 @@ const Redaction = "tenant-summary-v1"
 const MaxArtifact = 64 << 10
 
 type Plan struct {
-	Kind      string `json:"kind"`
-	IdentityA string `json:"identity_a_ref"`
-	IdentityB string `json:"identity_b_ref"`
-	TenantA   string `json:"tenant_a"`
-	TenantB   string `json:"tenant_b"`
-	ExportA   string `json:"export_a"`
-	ExportB   string `json:"export_b"`
+	Kind      string       `json:"kind"`
+	IdentityA string       `json:"identity_a_ref"`
+	IdentityB string       `json:"identity_b_ref"`
+	TenantA   string       `json:"tenant_a,omitempty"`
+	TenantB   string       `json:"tenant_b,omitempty"`
+	ExportA   string       `json:"export_a,omitempty"`
+	ExportB   string       `json:"export_b,omitempty"`
+	Object    *ObjectCheck `json:"object,omitempty"`
 }
 type Spec struct {
 	ProjectID string `json:"project_id"`
@@ -55,6 +55,16 @@ func Parse(raw json.RawMessage) (Spec, error) {
 	return s, err
 }
 func (p Plan) Validate() error {
+	if p.Kind == "object_authorization" {
+		if !validID(p.IdentityA) || !validID(p.IdentityB) || p.IdentityA == p.IdentityB || p.Object == nil ||
+			p.TenantA != "" || p.TenantB != "" || p.ExportA != "" || p.ExportB != "" {
+			return errors.New("invalid object authorization plan")
+		}
+		return p.Object.Validate()
+	}
+	if p.Object != nil {
+		return errors.New("object configuration requires object_authorization")
+	}
 	id := regexp.MustCompile("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 	if p.Kind != "tenant_isolation" || p.IdentityA == p.IdentityB || p.TenantA == p.TenantB || p.ExportA == p.ExportB {
 		return errors.New("invalid tenant isolation plan")
@@ -74,7 +84,12 @@ func Candidate(s Spec) string {
 }
 func (s Spec) URLs() []string {
 	base := strings.TrimRight(s.Target.Web.Origin, "/")
-	return []string{base + "/exports/" + url.PathEscape(s.Check.ExportA), base + "/exports/" + url.PathEscape(s.Check.ExportB), base + "/exports/" + url.PathEscape(s.Check.ExportB)}
+	paths := s.Check.Paths()
+	urls := []string{base + paths[0], base + paths[1], base + paths[2]}
+	if s.Stage == "prepare" {
+		return urls[:2]
+	}
+	return urls
 }
 
 type Observation struct {
@@ -89,6 +104,7 @@ type Transcript struct {
 	Observations []Observation `json:"observations"`
 }
 type Result struct {
+	ReasonCode string     `json:"reason_code,omitempty"`
 	Kind       string     `json:"kind"`
 	Verdict    string     `json:"verdict"`
 	Reason     string     `json:"reason"`
@@ -144,15 +160,18 @@ func uniqueObject(raw []byte) bool {
 	return d.Decode(&extra) == io.EOF
 }
 func Evaluate(t Transcript) Result {
-	r := Result{Kind: Version, Verdict: "inconclusive", Reason: "positive controls or response semantics could not be established", Transcript: t}
-	if t.Version != Version || len(t.Observations) != 3 {
+	if t.Version == PreflightVersion {
+		return evaluatePreflight(t)
+	}
+	r := Result{Kind: t.Version, Verdict: "inconclusive", Reason: "positive controls or response semantics could not be established", Transcript: t}
+	if (t.Version != Version && t.Version != ObjectVersion) || len(t.Observations) != 3 {
 		return r
 	}
 	valid := func(o Observation) bool {
 		return o.Status == 200 && o.ExportMatches && o.TenantMatches && len(o.ContentSHA256) == 64
 	}
 	a, b, c := t.Observations[0], t.Observations[1], t.Observations[2]
-	if !valid(a) || !valid(b) {
+	if !valid(a) || !valid(b) || (t.Version == ObjectVersion && a.ContentSHA256 == b.ContentSHA256) {
 		return r
 	}
 	if valid(c) && c.ContentSHA256 == b.ContentSHA256 {
@@ -162,10 +181,24 @@ func Evaluate(t Transcript) Result {
 		r.Verdict = "not_vulnerable"
 		r.Reason = "cross-tenant access denied with working positive controls"
 	}
+	if t.Version == ObjectVersion {
+		switch r.Verdict {
+		case "vulnerable":
+			r.Reason = "identity A retrieved identity B's configured protected object"
+		case "not_vulnerable":
+			r.Reason = "cross-identity access denied with working positive controls"
+		default:
+			r.Reason = "object, ownership or distinct protected-content controls could not be established"
+		}
+	}
 	return r
 }
 func ValidateTranscript(t Transcript) error {
-	if t.Version != Version || len(t.Observations) > 3 {
+	limit := 3
+	if t.Version == PreflightVersion {
+		limit = 2
+	}
+	if (t.Version != Version && t.Version != ObjectVersion && t.Version != PreflightVersion) || len(t.Observations) > limit {
 		return errors.New("invalid check transcript")
 	}
 	digest := regexp.MustCompile("^[0-9a-f]{64}$")
@@ -194,6 +227,7 @@ type Payload struct {
 	IdentityRefs   []string       `json:"identity_refs,omitempty"`
 	SnapshotSHA256 string         `json:"snapshot_sha256,omitempty"`
 	Anchors        []SourceAnchor `json:"anchors,omitempty"`
+	BrowserVersion string         `json:"browser_version,omitempty"`
 }
 type Evidence struct {
 	SchemaVersion int         `json:"schema_version"`
@@ -220,11 +254,21 @@ type Submission struct {
 func NewEvidence(s Spec, attempt string, t Transcript, at time.Time) Submission {
 	raw, _ := json.Marshal(t)
 	r := Evaluate(t)
+	expected := "An account can read only its tenant's export"
+	limitations := []string{"Fixed export JSON contract; this check does not assess other endpoints or vulnerability classes.", "Response content and all headers omitted; content is represented by SHA-256."}
+	if s.Check.Kind == "object_authorization" {
+		expected = "An identity cannot read another identity's configured protected object"
+		limitations = []string{"Only the configured GET endpoints and response selectors were evaluated.", "Protected values and all headers are omitted; selected data is represented by SHA-256.", "Resource ownership and the confidentiality requirement are supplied by the operator."}
+	}
+	if s.Stage == "prepare" {
+		expected = "Both configured identities can read their own known protected object"
+		limitations = []string{"Only two positive controls were requested; cross-identity access was not tested.", "A ready result establishes these controls at observation time, not the absence of vulnerabilities.", "Protected values and headers are omitted; selected data is represented by SHA-256."}
+	}
 	return Submission{Record: Evidence{
 		SchemaVersion: 1, EvidenceID: "evidence-" + Hash([]byte(attempt))[:40], CandidateID: Candidate(s),
 		ProjectID: s.ProjectID, RunID: s.RunID, TaskID: s.TaskID, AttemptID: attempt, PolicyRef: s.PolicyRef, ObservedAt: at,
-		Expected: "An account can read only its tenant's export", Observed: r.Verdict + ": " + r.Reason, Redaction: Redaction,
-		Limitations: []string{"Fixed export JSON contract; this check does not assess other endpoints or vulnerability classes.", "Response content and all headers omitted; content is represented by SHA-256."},
+		Expected: expected, Observed: r.Verdict + ": " + r.Reason, Redaction: Redaction,
+		Limitations: limitations,
 		Artifact:    ArtifactRef{Hash(raw), int64(len(raw)), "application/json"},
 		Payload:     Payload{Kind: "http_sequence", DeploymentID: s.Target.Web.DeploymentID, ObservationID: s.Target.Web.ObservationID, IdentityRefs: []string{s.Check.IdentityA, s.Check.IdentityB}},
 	}, Artifact: raw}

@@ -13,6 +13,7 @@ import (
 	"example.com/unified-harness/internal/configfile"
 	"example.com/unified-harness/internal/coreclient"
 	"example.com/unified-harness/internal/investigator"
+	"example.com/unified-harness/internal/webinvestigator"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -38,6 +39,16 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 	if err := tx.QueryRow(ctx, "SELECT t.spec,a.started_at FROM queue_tasks t JOIN queue_attempts a USING(project_id,run_id,task_id) WHERE a.project_id=$1 AND a.run_id=$2 AND a.attempt_id=$3", l.ProjectID, l.RunID, l.AttemptID).Scan(&raw, &started); err != nil {
 		return err
 	}
+	wspec, err := webinvestigator.Parse(raw)
+	if err != nil {
+		return invalidEvidence()
+	}
+	if wspec.Investigator != nil {
+		return s.webInvestigationTx(ctx, tx, l, a, c, raw, wspec, started, now)
+	}
+	if c.WebInvestigation != nil {
+		return invalidEvidence()
+	}
 	ispec, err := investigator.Parse(raw)
 	if err != nil {
 		return invalidEvidence()
@@ -58,7 +69,7 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 		}
 		return nil
 	}
-	if c.Outcome != "succeeded" {
+	if c.Outcome != "succeeded" && !(spec.Stage == "prepare" && c.Outcome == "failed" && c.Evidence != nil) {
 		if c.Evidence != nil {
 			return invalidEvidence()
 		}
@@ -72,7 +83,7 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 		return invalidEvidence()
 	}
 	var transcript checks.Transcript
-	if configfile.Decode(sub.Artifact, &transcript) != nil || checks.ValidateTranscript(transcript) != nil {
+	if configfile.Decode(sub.Artifact, &transcript) != nil || checks.ValidateTranscript(transcript) != nil || transcript.Version != checks.VersionForSpec(spec) {
 		return invalidEvidence()
 	}
 	canonicalArtifact, _ := json.Marshal(transcript)
@@ -89,7 +100,10 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
 		return invalidEvidence()
 	}
 	verdict := checks.Evaluate(transcript)
-	resultRaw, _ := json.Marshal(map[string]string{"kind": checks.Version, "verdict": verdict.Verdict, "reason": verdict.Reason, "evidence_id": sub.Record.EvidenceID})
+	if spec.Stage == "prepare" && ((verdict.Verdict == "ready") != (c.Outcome == "succeeded")) {
+		return invalidEvidence()
+	}
+	resultRaw, _ := json.Marshal(checks.Summary(verdict, sub.Record.EvidenceID))
 	normalizedResult, _ := canonical(resultRaw)
 	if !bytes.Equal(normalizedResult, c.Result) {
 		return invalidEvidence()
@@ -109,6 +123,9 @@ func (s *Store) evidenceTx(ctx context.Context, tx pgx.Tx, l Lease, a attempt, c
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, l.ProjectID, l.RunID, sub.Record.EvidenceID, l.TaskID, l.AttemptID, sub.Record.CandidateID, sub.Record.Artifact.SHA256, sub.Record.Artifact.Bytes, givenRaw)
 	if err != nil {
 		return err
+	}
+	if spec.Stage == "prepare" {
+		return nil // Positive controls never create findings or schedule replay.
 	}
 	if spec.Stage == "validate" {
 		status := "inconclusive"
@@ -258,11 +275,7 @@ func (s *Store) Findings(ctx context.Context, project, run, id, after string) (F
 			f.Status = "inconclusive"
 			f.Reason = "validation task " + taskStatus + "; reproduction has not been established"
 		}
-		f.Steps = []string{
-			"GET " + f.Origin + "/exports/" + f.Check.ExportA + " using " + f.Check.IdentityA + "; verify tenant " + f.Check.TenantA,
-			"GET " + f.Origin + "/exports/" + f.Check.ExportB + " using " + f.Check.IdentityB + "; verify tenant " + f.Check.TenantB,
-			"GET " + f.Origin + "/exports/" + f.Check.ExportB + " using " + f.Check.IdentityA + "; compare ownership and content digest with the second response",
-		}
+		f.Steps = checks.ReproductionSteps(f.Origin, f.Check)
 		page.Findings = append(page.Findings, f)
 	}
 	if err = rows.Err(); err != nil {

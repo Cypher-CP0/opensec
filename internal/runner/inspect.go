@@ -20,6 +20,7 @@ const MaxInput = 32 << 20
 const MaxOutput = 1 << 20
 
 type Input struct {
+	Preflight    bool                 `json:"preflight,omitempty"`
 	SourceQuery  *investigator.Query  `json:"source_query,omitempty"`
 	SourcePaths  []string             `json:"source_paths,omitempty"`
 	Check        *checks.Plan         `json:"check,omitempty"`
@@ -113,22 +114,30 @@ func Inspect(input Input) (Report, error) {
 		report.Files = []File{}
 		report.Source = &result
 	}
+	if input.Preflight && (input.Check == nil || input.Check.Kind != "object_authorization" || input.SourceQuery != nil) {
+		return report, errors.New("preflight requires only an object authorization check")
+	}
 	if input.Check != nil {
 		if err := input.Check.Validate(); err != nil {
 			return report, err
 		}
-		t := checks.Transcript{Version: checks.Version, Observations: []checks.Observation{}}
-		if len(input.Observations) > 3 {
+		version, limit := checks.VersionFor(*input.Check), 3
+		if input.Preflight {
+			version, limit = checks.PreflightVersion, 2
+		}
+		t := checks.Transcript{Version: version, Observations: []checks.Observation{}}
+		if len(input.Observations) > limit {
 			return report, errors.New("too many check responses")
 		}
-		exports := []string{input.Check.ExportA, input.Check.ExportB, input.Check.ExportB}
-		tenants := []string{input.Check.TenantA, input.Check.TenantB, input.Check.TenantB}
 		for i, o := range input.Observations {
-			t.Observations = append(t.Observations, checks.Summarize(o.Status, o.Body, exports[i], tenants[i]))
+			t.Observations = append(t.Observations, checks.SummarizePlan(*input.Check, o.Status, o.Body, i))
 		}
 		result := checks.Evaluate(t)
 		report.Check = &result
 		report.SecurityJudgment = "deterministic_check"
+		if input.Preflight {
+			report.SecurityJudgment = "preflight_only"
+		}
 	}
 	return report, nil
 }

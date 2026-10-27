@@ -15,6 +15,7 @@ import (
 
 	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/coreclient"
+	"example.com/unified-harness/internal/policy"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -35,6 +36,7 @@ type Store struct {
 	validator Validator
 	settings  Settings
 	evidence  *evidenceConfig
+	traffic   *policy.Registry
 }
 
 func Open(ctx context.Context, dsn string, validator Validator, settings Settings) (*Store, error) {
@@ -72,7 +74,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS harness_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
 		return err
 	}
-	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql", "migrations/003_investigator.sql"} {
+	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql", "migrations/003_investigator.sql", "migrations/004_target_traffic.sql"} {
 		raw, err := migrations.ReadFile(name)
 		if err != nil {
 			return err
@@ -192,6 +194,14 @@ type specProjection struct {
 }
 
 func (s *Store) Enqueue(ctx context.Context, raw json.RawMessage, options EnqueueOptions) error {
+	var webTask struct {
+		WebInvestigator *struct {
+			AllowMutations bool `json:"allow_mutations"`
+		} `json:"web_investigator"`
+	}
+	if json.Unmarshal(raw, &webTask) != nil || (webTask.WebInvestigator != nil && webTask.WebInvestigator.AllowMutations && options.MaxAttempts != 1) {
+		return fmt.Errorf("%w: mutation investigation requires exactly one attempt", ErrInvalid)
+	}
 	if options.MaxAttempts < 1 || options.MaxAttempts > 100 || options.CostMicrousd < 0 || options.CostMicrousd > 1e12 {
 		return fmt.Errorf("%w: invalid task scheduling options", ErrInvalid)
 	}

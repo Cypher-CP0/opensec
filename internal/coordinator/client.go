@@ -87,6 +87,8 @@ func (c *Client) call(ctx context.Context, method, path string, input, out any) 
 		var problem ErrorResponse
 		_ = json.Unmarshal(body, &problem)
 		switch problem.Error {
+		case "invalid_request":
+			return queue.ErrInvalid
 		case "budget_exhausted":
 			return queue.ErrBudget
 		case "invalid_lease":
@@ -118,7 +120,7 @@ func (c *Client) Info(ctx context.Context) (Info, error) {
 }
 func (c *Client) Call(ctx context.Context, operation string, input json.RawMessage) (json.RawMessage, error) {
 	switch operation {
-	case "create-run", "enqueue", "run", "task", "claim", "heartbeat", "finish", "cancel", "reap", "resume", "close", "evidence", "finding", "findings", "investigation":
+	case "create-run", "enqueue", "run", "task", "claim", "heartbeat", "finish", "cancel", "reap", "resume", "close", "evidence", "finding", "findings", "investigation", "report", "traffic-acquire", "traffic-release":
 	default:
 		return nil, errors.New("unknown API operation")
 	}

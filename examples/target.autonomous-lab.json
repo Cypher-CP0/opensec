@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "project_id": "lab-project",
+  "policy_ref": "lab-web-policy",
+  "origin": "http://127.0.0.1:8081",
+  "deployment_id": "synthetic-vulnerable",
+  "allowed_cidrs": ["127.0.0.1/32"],
+  "allow_private": true,
+  "allowed_endpoints": [
+    {"method": "GET", "path_template": "/healthz"},
+    {"method": "GET", "path_template": "/exports/{id}"}
+  ],
+  "traffic": {"min_interval_ms": 500, "max_concurrent": 1, "backoff_seconds": 30},
+  "seed_urls": ["http://127.0.0.1:8081/healthz", "http://127.0.0.1:8081/exports/export-a"],
+  "identities": [
+    {"identity_ref": "reader-a", "token_file": "../work/lab-a.token"},
+    {"identity_ref": "reader-b", "token_file": "../work/lab-b.token"}
+  ],
+  "question": "Investigate tenant isolation in the authorized synthetic lab. Compare access to exports under reader-a and reader-b. Propose a candidate only if observations justify independent replay.",
+  "max_steps": 8,
+  "allow_mutations": false,
+  "deadline_seconds": 3600,
+  "max_wall_seconds": 600,
+  "max_artifact_bytes": 1048576,
+  "max_model_tokens": 100000,
+  "max_requests": 30,
+  "model": {
+    "id": "lab-web-cli",
+    "provider": "claude_code",
+    "executable": "/usr/local/bin/claude",
+    "model": "sonnet",
+    "project_id": "lab-project",
+    "policy_ref": "lab-web-policy",
+    "origin": "http://127.0.0.1:8081",
+    "max_calls": 8,
+    "max_prompt_bytes": 32768,
+    "call_seconds": 60,
+    "allow_target_disclosure": true
+  }
+}

@@ -10,6 +10,7 @@ import (
 	"example.com/unified-harness/internal/investigator"
 	"example.com/unified-harness/internal/policy"
 	"example.com/unified-harness/internal/queue"
+	"example.com/unified-harness/internal/webinvestigator"
 	"io"
 	"os"
 	"time"
@@ -40,7 +41,12 @@ type Executor interface {
 	Execute(context.Context, time.Time, Input, int64) (json.RawMessage, error)
 }
 type Handler struct {
+	TrafficStore         TrafficStore
 	InvestigatorProfiles []investigator.Profile
+	WebProfiles          []webinvestigator.Profile
+	Workspace            *WorkspaceDocker
+	WebModelAdapter      func(webinvestigator.Profile) webinvestigator.Model
+	WebToolFactory       func(context.Context, queue.Lease, policy.Policy, webinvestigator.Spec) (webinvestigator.Tool, func() error, error)
 	// ModelAdapter is an in-process test seam; production always uses the fixed CLI adapter.
 	ModelAdapter func(investigator.Profile) investigator.Adapter
 	Policies     *policy.Registry
@@ -76,6 +82,15 @@ func (h Handler) Run(ctx context.Context, l queue.Lease) queue.Completion {
 	if err != nil {
 		return finish("failed", "target policy denied task", nil)
 	}
+	if l.Traffic != nil && (p.Traffic == nil || *p.Traffic != *l.Traffic) {
+		return finish("blocked_environment", "worker/coordinator traffic policy mismatch", nil)
+	}
+	if p.Traffic != nil {
+		if h.TrafficStore == nil {
+			return finish("blocked_environment", "shared target traffic admission is not configured", nil)
+		}
+		h.Broker.Gate = leaseGate{store: h.TrafficStore, lease: l}
+	}
 	check, parseErr := checks.Parse(l.Spec)
 	if parseErr != nil {
 		return finish("failed", "invalid check specification", nil)
@@ -86,6 +101,13 @@ func (h Handler) Run(ctx context.Context, l queue.Lease) queue.Completion {
 	}
 	if ispec.Investigator != nil {
 		return h.runInvestigator(ctx, l, p, ispec)
+	}
+	wspec, parseErr := webinvestigator.Parse(l.Spec)
+	if parseErr != nil {
+		return finish("failed", "invalid web investigator specification", nil)
+	}
+	if wspec.Investigator != nil {
+		return h.runWebInvestigator(ctx, l, p, wspec)
 	}
 	if check.Check != nil {
 		return h.runCheck(ctx, l, p, check)
@@ -123,6 +145,9 @@ func (h Handler) Run(ctx context.Context, l queue.Lease) queue.Completion {
 		byteLimit := min(l.Reserved.ArtifactBytes-outputLimit, p.MaxInputBytes/4)
 		input.Observations, usage.Requests, usage.ArtifactBytes, err = h.Broker.Fetch(ctx, p, web.Seeds, l.Reserved.Requests, byteLimit)
 		if err != nil {
+			if errors.Is(err, policy.ErrTrafficUnavailable) {
+				return queue.Completion{Outcome: "blocked_environment", Reason: "traffic admission failed; request usage unknown"}
+			}
 			if errors.Is(err, policy.ErrLimit) {
 				return finish("failed", "network resource allowance exhausted", nil)
 			}

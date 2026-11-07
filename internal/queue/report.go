@@ -30,6 +30,7 @@ type ReportTask struct {
 	Verdict             string    `json:"verdict,omitempty"`
 	ReasonCode          string    `json:"reason_code,omitempty"`
 	CandidateStatus     string    `json:"candidate_status,omitempty"`
+	CandidateEvidenceID string    `json:"candidate_evidence_id,omitempty"`
 	EvidenceID          string    `json:"evidence_id,omitempty"`
 	FailedPrerequisites int64     `json:"failed_prerequisites"`
 	Deadline            time.Time `json:"deadline"`
@@ -44,6 +45,7 @@ type ReportFinding struct {
 	ValidationTaskID     *string  `json:"validation_task_id"`
 	ValidationEvidenceID *string  `json:"validation_evidence_id"`
 	SourceEvidenceIDs    []string `json:"source_evidence_ids"`
+	CandidateEvidenceID  string   `json:"candidate_evidence_id,omitempty"`
 	Steps                []string `json:"reproduction_steps"`
 }
 type RunReport struct {
@@ -102,16 +104,17 @@ func (s *Store) Report(ctx context.Context, project, run string) (RunReport, err
 	rows, err = tx.Query(ctx, `SELECT t.task_id,t.spec->>'stage',t.spec#>>'{target,mode}',COALESCE(t.spec#>>'{check,kind}',''),COALESCE(t.spec#>>'{target,web,origin}',''),
 t.status,t.generation,CASE WHEN e.evidence_id IS NOT NULL AND t.spec#>>'{check,kind}' IN ('object_authorization','tenant_isolation') THEN COALESCE(a.result->>'verdict','') ELSE '' END,
 CASE WHEN e.evidence_id IS NOT NULL AND t.spec#>>'{check,kind}' IN ('object_authorization','tenant_isolation') THEN COALESCE(a.result->>'reason_code','') ELSE '' END,CASE WHEN e.evidence_id IS NOT NULL AND t.spec ? 'web_investigator' THEN COALESCE(a.result#>>'{web_investigation,candidate,status}','') ELSE '' END,COALESCE(e.evidence_id,''),
-(SELECT count(*) FROM queue_dependencies d JOIN queue_tasks p ON p.project_id=d.project_id AND p.run_id=d.run_id AND p.task_id=d.depends_on WHERE d.project_id=t.project_id AND d.run_id=t.run_id AND d.task_id=t.task_id AND p.status IN ('failed','cancelled')),t.deadline
+(SELECT count(*) FROM queue_dependencies d JOIN queue_tasks p ON p.project_id=d.project_id AND p.run_id=d.run_id AND p.task_id=d.depends_on WHERE d.project_id=t.project_id AND d.run_id=t.run_id AND d.task_id=t.task_id AND p.status IN ('failed','cancelled')),t.deadline,COALESCE(w.candidate_evidence_id,'')
 FROM queue_tasks t LEFT JOIN queue_attempts a ON a.project_id=t.project_id AND a.run_id=t.run_id AND a.task_id=t.task_id AND a.generation=t.generation
 LEFT JOIN evidence_records e ON e.project_id=t.project_id AND e.run_id=t.run_id AND e.task_id=t.task_id AND e.attempt_id=a.attempt_id AND e.evidence_id=COALESCE(a.result->>'evidence_id',a.result->>'web_evidence_id')
+LEFT JOIN web_candidate_validations w ON w.project_id=t.project_id AND w.run_id=t.run_id AND (w.preflight_task_id=t.task_id OR w.discovery_task_id=t.task_id)
 WHERE t.project_id=$1 AND t.run_id=$2 ORDER BY t.created_at,t.task_id LIMIT $3`, project, run, ReportTaskLimit+1)
 	if err != nil {
 		return v, err
 	}
 	for rows.Next() {
 		var t ReportTask
-		if err = rows.Scan(&t.ID, &t.Stage, &t.Mode, &t.CheckKind, &t.Origin, &t.Status, &t.Generation, &t.Verdict, &t.ReasonCode, &t.CandidateStatus, &t.EvidenceID, &t.FailedPrerequisites, &t.Deadline); err != nil {
+		if err = rows.Scan(&t.ID, &t.Stage, &t.Mode, &t.CheckKind, &t.Origin, &t.Status, &t.Generation, &t.Verdict, &t.ReasonCode, &t.CandidateStatus, &t.EvidenceID, &t.FailedPrerequisites, &t.Deadline, &t.CandidateEvidenceID); err != nil {
 			rows.Close()
 			return v, err
 		}
@@ -144,8 +147,9 @@ WHERE t.project_id=$1 AND t.run_id=$2 ORDER BY t.created_at,t.task_id LIMIT $3`,
 	if err != nil {
 		return v, err
 	}
-	rows, err = tx.Query(ctx, "SELECT f.finding_id,"+effectiveFindingStatus+`,f.origin,f.deployment_id,f.discovery_task_id,f.discovery_evidence_id,f.validation_task_id,f.validation_evidence_id,f.check_plan
+	rows, err = tx.Query(ctx, "SELECT f.finding_id,"+effectiveFindingStatus+`,f.origin,f.deployment_id,f.discovery_task_id,f.discovery_evidence_id,f.validation_task_id,f.validation_evidence_id,f.check_plan,COALESCE(w.candidate_evidence_id,'')
 FROM findings f LEFT JOIN queue_tasks t ON t.project_id=f.project_id AND t.run_id=f.run_id AND t.task_id=f.validation_task_id
+LEFT JOIN web_candidate_validations w ON w.project_id=f.project_id AND w.run_id=f.run_id AND w.discovery_task_id=f.discovery_task_id
 WHERE f.project_id=$1 AND f.run_id=$2 ORDER BY f.finding_id LIMIT $3`, project, run, ReportFindingLimit+1)
 	if err != nil {
 		return v, err
@@ -154,7 +158,7 @@ WHERE f.project_id=$1 AND f.run_id=$2 ORDER BY f.finding_id LIMIT $3`, project, 
 		var f ReportFinding
 		var plan checks.Plan
 		var raw []byte
-		if err = rows.Scan(&f.ID, &f.Status, &f.Origin, &f.DeploymentID, &f.DiscoveryTaskID, &f.DiscoveryEvidenceID, &f.ValidationTaskID, &f.ValidationEvidenceID, &raw); err != nil {
+		if err = rows.Scan(&f.ID, &f.Status, &f.Origin, &f.DeploymentID, &f.DiscoveryTaskID, &f.DiscoveryEvidenceID, &f.ValidationTaskID, &f.ValidationEvidenceID, &raw, &f.CandidateEvidenceID); err != nil {
 			rows.Close()
 			return v, err
 		}

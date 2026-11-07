@@ -32,7 +32,7 @@ Set HARNESS_DATABASE_URL for the coordinator and migration command. URL-encode a
 ./bin/harness queue migrate
 ~~~
 
-This applies additive migration 004_target_traffic.sql, which creates shared target-admission and permit tables. Existing queue, evidence and finding records are preserved. Stop older coordinators/workers, rebuild, migrate, then restart both components. The new coordinator checks for these tables at startup.
+This applies additive migrations 004_target_traffic.sql and 005_web_candidate_validation.sql, which create shared target-admission, permit and candidate-validation link tables. Existing queue, evidence and finding records are preserved. Stop older coordinators/workers, rebuild, migrate, then restart both components. The new coordinator checks for these tables at startup.
 
 ## Prepare a web-only run
 
@@ -176,7 +176,7 @@ A succeeded task means execution completed; inspect its verdict. A denied cross-
 
 Reports use an authenticated, run-scoped, read-only PostgreSQL snapshot. They include aggregate task/finding counts, preflight and security verdicts with evidence IDs, reproduction steps, validation outcomes and budget charges/reservations. A failed or cancelled validation remains inconclusive. Active runs are provisional. Reports omit raw results, response bodies, headers, credentials and source/model excerpts; identifiers and reproduction URLs may still be sensitive.
 
-Output files are private and must be new. Task details are limited to 200 rows, finding details to 100 and source evidence references to 100 per finding; truncation is explicit and aggregate counts include all rows. Retrieve additional task/finding details through the existing scoped APIs. Snapshot export does not perform target requests, DNS resolution or model calls. It adds no database migration beyond 004.
+Output files are private and must be new. Task details are limited to 200 rows, finding details to 100 and source evidence references to 100 per finding; truncation is explicit and aggregate counts include all rows. Retrieve additional task/finding details through the existing scoped APIs. Snapshot export does not perform target requests, DNS resolution or model calls. Report export adds no database migration.
 
 ## Bounded autonomous web investigation (preview)
 
@@ -237,10 +237,23 @@ In another terminal, create and enqueue the run, then start the worker with both
 
 This worker makes live Claude CLI calls and scoped requests once a task is queued. Inspect `work/lab-agent-1/task.json` through the authenticated `task` API. A candidate result includes a `web_evidence_id`; the existing authenticated `evidence` API retrieves its stored trace. The `findings` API lists only separately validated findings.
 
+For an `object_authorization` candidate, the operator can submit an explicit validation plan. The plan declares both accounts' known objects, owners and protected JSON fields. The coordinator requires the candidate's selected observations to contain a 200 GET of B's object under A's identity, then queues two positive controls and a fresh cross-identity check. A separate worker lease replays a vulnerable result before `findings` can show `confirmed`. If the controls fail or replay differs, the result stays unconfirmed. This path currently supports this one check kind.
+
+The [synthetic lab plan](examples/candidate-validation.lab.json) is a template. After a candidate task finishes, copy its `web_evidence_id` into `candidate_evidence_id` and submit it with the operator token:
+
+~~~sh
+./bin/harness api --token-file work/lab-agent-1/auth/operator.token \
+  --operation validate-candidate --file work/lab-agent-1/validate-candidate.json
+./bin/harness api --token-file work/lab-agent-1/auth/operator.token \
+  --operation findings --file work/lab-agent-1/scope.json
+~~~
+
+The worker must remain running to perform the queued controls, discovery and replay. Finding and run reports include the source candidate evidence ID so the model observation and independent HTTP evidence can be reviewed together. New two-identity runs prepared by `web-prepare` reserve four task slots and a bounded validation retry budget. Existing runs created with a single task slot need a new run for this path.
+
 ## Current scope and next work
 
 The generic check supports configured GET routes and JSON responses. Existing tenant_isolation tasks and stored evidence remain supported. The broker enforces exact origins and destination CIDRs, pins approved DNS results, refuses redirects and separates credentials from evidence.
 
-Queued online preflight, JSON/Markdown report export and a bounded web model investigator are implemented. The browser/Linux workspace uses Docker without direct network access; every target request passes through the worker broker and shared traffic admission. Model web candidates remain unvalidated until a separate replay confirms them. OpenAPI import and browser login are subsequent work. Preparation commands remain offline. Source-only model hypotheses remain unvalidated until a supported runtime check can reproduce them.
+Queued online preflight, JSON/Markdown report export and a bounded web model investigator are implemented. The browser/Linux workspace uses Docker without direct network access; every target request passes through the worker broker and shared traffic admission. Operator-linked object authorization candidates can be checked with fresh controls, discovery and replay; other web candidates remain unvalidated. OpenAPI import and browser login are subsequent work. Preparation commands remain offline. Source-only model hypotheses remain unvalidated until a supported runtime check can reproduce them.
 
 The docs/ directory contains local design notes and is excluded from Git. Runtime examples and published schemas are under examples/ and schemas/. Neither the model nor queue infrastructure provides general vulnerability coverage without implemented checks and validation.

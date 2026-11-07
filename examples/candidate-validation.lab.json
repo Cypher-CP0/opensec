@@ -1,0 +1,26 @@
+{
+  "project_id": "lab-project",
+  "run_id": "lab-agent-1",
+  "candidate_evidence_id": "REPLACE_WITH_WEB_EVIDENCE_ID",
+  "plan": {
+    "kind": "object_authorization",
+    "identity_a_ref": "reader-a",
+    "identity_b_ref": "reader-b",
+    "object": {
+      "path_template": "/exports/{id}",
+      "resource_a": "export-a",
+      "resource_b": "export-b",
+      "owner_a": "tenant-a",
+      "owner_b": "tenant-b",
+      "response": {
+        "resource_id": "/export_id",
+        "owner_id": "/tenant_id",
+        "protected_value": "/content"
+      }
+    }
+  },
+  "max_attempts": 1,
+  "deadline_seconds": 300,
+  "max_wall_seconds": 60,
+  "max_artifact_bytes": 65536
+}

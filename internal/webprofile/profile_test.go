@@ -26,7 +26,7 @@ func TestPrepareMutationTaskIsScopedAndOffline(t *testing.T) {
 		CIDRs: []string{"127.0.0.1/32"}, AllowPrivate: true,
 		Endpoints:  []policy.Endpoint{{Method: "GET", PathTemplate: "/healthz"}, {Method: "POST", PathTemplate: "/objects/{id}", AllowQuery: true}},
 		Seeds:      []string{origin + "/healthz"},
-		Identities: []Identity{{Ref: "reader-a", TokenFile: "missing-token-file"}},
+		Identities: []Identity{{Ref: "reader-a", TokenFile: "missing-token-file"}, {Ref: "reader-b", TokenFile: "missing-other-token-file"}},
 		Question:   "Investigate configured object behavior", MaxSteps: 3, AllowMutations: true,
 		DeadlineSeconds: 600, WallSeconds: 120, ArtifactBytes: 262144, Tokens: 1000, Requests: 3,
 		Model: webinvestigator.Profile{ID: "local-model", Provider: "claude_code", Executable: filepath.Join(t.TempDir(), "claude"), Model: "sonnet", ProjectID: "lab-project", PolicyRef: "lab-policy", Origin: origin, MaxCalls: 3, MaxPromptBytes: 32768, CallSeconds: 30, AllowTargetDisclosure: true},
@@ -39,7 +39,7 @@ func TestPrepareMutationTaskIsScopedAndOffline(t *testing.T) {
 	if err = json.Unmarshal(b.Task, &task); err != nil {
 		t.Fatal(err)
 	}
-	if task.Investigator == nil || !task.Investigator.AllowMutations || task.RetryClass != "requires_reconciliation" || b.Run.MaxAttempts != 1 || len(b.Credentials) != 1 {
+	if task.Investigator == nil || !task.Investigator.AllowMutations || task.RetryClass != "requires_reconciliation" || b.Run.MaxAttempts != 10 || b.Run.MaxTasks != 4 || b.Run.Limits.Requests != p.Requests+24 || len(b.Credentials) != 2 {
 		t.Fatalf("%+v", b)
 	}
 	var envelope struct {

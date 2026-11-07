@@ -143,7 +143,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workerOp := operation == "claim" || operation == "heartbeat" || operation == "finish" || operation == "traffic-acquire" || operation == "traffic-release"
-	controlOp := operation == "create-run" || operation == "enqueue" || operation == "cancel" || operation == "resume" || operation == "close"
+	controlOp := operation == "create-run" || operation == "enqueue" || operation == "validate-candidate" || operation == "cancel" || operation == "resume" || operation == "close"
 	if (workerOp && principal.Role != "worker") || (controlOp && principal.Role != "operator") {
 		fail(w, 403, "forbidden")
 		return
@@ -183,6 +183,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = s.store.Enqueue(ctx, input.Task, input.Options)
+	case "validate-candidate":
+		var input queue.CandidateValidationRequest
+		if !decode(w, r, &input) || !scopeOK(input.ProjectID, input.RunID) {
+			return
+		}
+		value, err = s.store.ScheduleCandidateValidation(ctx, input)
 	case "traffic-acquire", "traffic-release":
 		var input TrafficRequest
 		if !decode(w, r, &input) || !scopeOK(input.Lease.ProjectID, input.Lease.RunID) {

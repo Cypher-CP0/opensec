@@ -74,7 +74,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if _, err = tx.Exec(ctx, "CREATE TABLE IF NOT EXISTS harness_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())"); err != nil {
 		return err
 	}
-	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql", "migrations/003_investigator.sql", "migrations/004_target_traffic.sql"} {
+	for version, name := range []string{"migrations/001_queue.sql", "migrations/002_evidence.sql", "migrations/003_investigator.sql", "migrations/004_target_traffic.sql", "migrations/005_web_candidate_validation.sql"} {
 		raw, err := migrations.ReadFile(name)
 		if err != nil {
 			return err

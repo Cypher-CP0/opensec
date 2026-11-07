@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"example.com/unified-harness/internal/checks"
 	"example.com/unified-harness/internal/policy"
 	"os"
 	"testing"
@@ -52,6 +53,32 @@ func (c *liveCommand) Run(ctx context.Context, input []byte, limit int64, args .
 		}
 	}
 	return raw, err
+}
+func TestRealDockerObjectPreflight(t *testing.T) {
+	image := os.Getenv("HARNESS_TEST_RUNNER_IMAGE")
+	if image == "" {
+		t.Fatal("set HARNESS_TEST_RUNNER_IMAGE to a built immutable image ID")
+	}
+	d, err := NewDocker(t.Context(), image, DefaultLimits(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := checks.Plan{Kind: "object_authorization", IdentityA: "reader-a", IdentityB: "reader-b", Object: &checks.ObjectCheck{
+		PathTemplate: "/exports/{id}", ResourceA: "export-a", ResourceB: "export-b", OwnerA: "tenant-a", OwnerB: "tenant-b",
+		Response: checks.ObjectResponse{ResourceID: "/export_id", OwnerID: "/tenant_id", ProtectedValue: "/content"},
+	}}
+	input := Input{Preflight: true, Check: &plan, Observations: []policy.Observation{
+		{Status: 200, Body: []byte(`{"export_id":"export-a","tenant_id":"tenant-a","content":"synthetic A"}`)},
+		{Status: 200, Body: []byte(`{"export_id":"export-b","tenant_id":"tenant-b","content":"synthetic B"}`)},
+	}}
+	raw, err := d.Execute(t.Context(), time.Now().Add(20*time.Second), input, 16<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report Report
+	if err = json.Unmarshal(raw, &report); err != nil || report.Check == nil || report.Check.Verdict != "ready" || report.SecurityJudgment != "preflight_only" {
+		t.Fatalf("preflight report invalid: %+v %v", report, err)
+	}
 }
 func TestRealDockerIsolationAndCleanup(t *testing.T) {
 	image := os.Getenv("HARNESS_TEST_RUNNER_IMAGE")

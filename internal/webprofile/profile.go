@@ -146,6 +146,15 @@ func Prepare(ctx context.Context, p Profile, run, baseDir, core string, now time
 	out.Policy = []policy.Policy{pol}
 	out.Profiles = []webinvestigator.Profile{p.Model}
 	out.Run = queue.RunConfig{ProjectID: p.ProjectID, RunID: run, MaxTasks: 1, MaxAttempts: 1, Limits: queue.Units{ArtifactBytes: p.ArtifactBytes, Tokens: p.Tokens, Requests: p.Requests, WallSeconds: p.WallSeconds}}
+	if len(refs) >= 2 {
+		// One candidate may use positive controls, discovery and a fresh replay.
+		// Reserve the maximum permitted read-only retry budget for each stage.
+		out.Run.MaxTasks = 4
+		out.Run.MaxAttempts = 10
+		out.Run.Limits.Requests += 24
+		out.Run.Limits.WallSeconds += 2700
+		out.Run.Limits.ArtifactBytes += 9 << 20
+	}
 	out.Task = raw
 	out.Enqueue = envelope
 	return out, nil

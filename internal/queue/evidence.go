@@ -233,6 +233,7 @@ func (s *Store) GetEvidence(ctx context.Context, project, run, id string) (Store
 
 type Finding struct {
 	SourceLinks          []SourceLink `json:"source_links"`
+	CandidateEvidenceID  string       `json:"candidate_evidence_id,omitempty"`
 	ID                   string       `json:"finding_id"`
 	Status               string       `json:"status"`
 	Origin               string       `json:"origin"`
@@ -253,8 +254,9 @@ type FindingPage struct {
 }
 
 func (s *Store) Findings(ctx context.Context, project, run, id, after string) (FindingPage, error) {
-	rows, err := s.pool.Query(ctx, `SELECT f.finding_id,f.status,f.origin,f.deployment_id,f.check_plan,f.discovery_task_id,f.discovery_evidence_id,f.validation_task_id,f.validation_evidence_id,f.reason,f.created_at,f.updated_at,COALESCE(t.status,'')
+	rows, err := s.pool.Query(ctx, `SELECT f.finding_id,f.status,f.origin,f.deployment_id,f.check_plan,f.discovery_task_id,f.discovery_evidence_id,f.validation_task_id,f.validation_evidence_id,f.reason,f.created_at,f.updated_at,COALESCE(t.status,''),COALESCE(w.candidate_evidence_id,'')
  FROM findings f LEFT JOIN queue_tasks t ON t.project_id=f.project_id AND t.run_id=f.run_id AND t.task_id=f.validation_task_id
+ LEFT JOIN web_candidate_validations w ON w.project_id=f.project_id AND w.run_id=f.run_id AND w.discovery_task_id=f.discovery_task_id
  WHERE f.project_id=$1 AND f.run_id=$2 AND ($3='' OR f.finding_id=$3) AND f.finding_id>$4 ORDER BY f.finding_id LIMIT 101`, project, run, id, after)
 	page := FindingPage{Findings: []Finding{}}
 	if err != nil {
@@ -265,7 +267,7 @@ func (s *Store) Findings(ctx context.Context, project, run, id, after string) (F
 		var f Finding
 		var plan []byte
 		var taskStatus string
-		if err = rows.Scan(&f.ID, &f.Status, &f.Origin, &f.DeploymentID, &plan, &f.DiscoveryTaskID, &f.DiscoveryEvidenceID, &f.ValidationTaskID, &f.ValidationEvidenceID, &f.Reason, &f.CreatedAt, &f.UpdatedAt, &taskStatus); err != nil {
+		if err = rows.Scan(&f.ID, &f.Status, &f.Origin, &f.DeploymentID, &plan, &f.DiscoveryTaskID, &f.DiscoveryEvidenceID, &f.ValidationTaskID, &f.ValidationEvidenceID, &f.Reason, &f.CreatedAt, &f.UpdatedAt, &taskStatus, &f.CandidateEvidenceID); err != nil {
 			return page, err
 		}
 		if err = json.Unmarshal(plan, &f.Check); err != nil {

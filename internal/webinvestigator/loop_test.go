@@ -3,8 +3,11 @@ package webinvestigator
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
+
+	"example.com/unified-harness/internal/investigator"
 )
 
 type scriptedModel struct {
@@ -106,5 +109,43 @@ func TestActionDecoderRejectsUnsupportedMethodAndExtraFields(t *testing.T) {
 		if _, err := DecodeAction([]byte(raw)); err == nil {
 			t.Fatal(raw)
 		}
+	}
+}
+
+type correctionModel struct {
+	calls       int
+	sawFeedback bool
+}
+
+func (m *correctionModel) Call(_ context.Context, prompt []byte) (Action, int64, error) {
+	m.calls++
+	switch m.calls {
+	case 1:
+		return Action{}, 10, &investigator.CLIError{Code: "cli_invalid_action"}
+	case 2:
+		m.sawFeedback = strings.Contains(string(prompt), "invalid_action")
+		return Action{Kind: "request", URL: "http://127.0.0.1:8081/healthz", IdentityRef: "reader"}, 10, nil
+	default:
+		return Action{Kind: "propose", Rationale: "Observed response needs replay", ObservationIDs: []int{0}}, 10, nil
+	}
+}
+func TestInvalidStructuredActionCanBeCorrectedWithinBound(t *testing.T) {
+	s := webSpec(t, false)
+	model := &correctionModel{}
+	tool := &scriptedTool{result: ToolResult{BrowserVersion: "123", Admissions: 1, Events: []NetworkEvent{{URL: "http://127.0.0.1:8081/healthz", Method: "GET", IdentityRef: "reader", Status: 200, BodyBytes: 2}}}}
+	report := Run(t.Context(), s, model, tool, 65536)
+	if report.Status != "candidate" || report.Calls != 3 || report.Tokens != 30 || report.Requests != 1 || tool.calls != 1 || !model.sawFeedback {
+		t.Fatalf("%+v feedback=%v tool_calls=%d", report, model.sawFeedback, tool.calls)
+	}
+}
+
+func TestInvalidStructuredActionStopsAtTokenBudget(t *testing.T) {
+	s := webSpec(t, false)
+	s.Budget.Tokens = 10
+	model := &correctionModel{}
+	tool := &scriptedTool{}
+	report := Run(t.Context(), s, model, tool, 65536)
+	if report.Status != "invalid_action" || report.Problem != "cli_invalid_action" || report.Calls != 1 || report.Tokens != 10 || tool.calls != 0 {
+		t.Fatalf("%+v tool_calls=%d", report, tool.calls)
 	}
 }

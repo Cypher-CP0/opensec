@@ -33,6 +33,7 @@ type Spec struct {
 	ProjectID     string    `json:"project_id"`
 	RunID         string    `json:"run_id"`
 	TaskID        string    `json:"task_id"`
+	Stage         string    `json:"stage"`
 	PolicyRef     string    `json:"policy_ref"`
 	Question      string    `json:"question"`
 	CreatedAt     time.Time `json:"created_at"`

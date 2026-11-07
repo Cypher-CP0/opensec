@@ -1,8 +1,10 @@
 # OpenSec
+<img width="2752" height="1092" alt="OpenSec_Image_lm0te9lm0te9lm0t" src="https://github.com/user-attachments/assets/410000f5-68b6-48e5-a0be-e367a53f7f9b" />
+
 
 OpenSec coordinates bounded vulnerability checks, evidence storage and fresh replay. Go runs the coordinator, workers and CLI; Rust validates versioned contracts, target policy and evidence binding. PostgreSQL persists execution and findings. A fixed Docker inspector evaluates prepared observations without network access. A separate disposable Linux/Chromium workspace lets a bounded model investigate scoped web targets through the policy checked broker.
 
-The implemented deterministic checks cover tenant-export isolation and configurable object authorization. The web-only path also supports a bounded Claude Code investigator with browser, HTTP and shell actions; source access is optional. Source-assisted investigation remains available through the existing Claude Code adapter.
+The implemented deterministic checks cover tenant-export isolation and configurable object authorization. The web-only path also supports a bounded LLM investigator with browser, HTTP and shell actions; source access is optional. Source-assisted investigation remains available through the existing Claude Code adapter.
 
 ## Build and test
 
